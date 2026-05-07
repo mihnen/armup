@@ -24,6 +24,8 @@ func Normalize(version string) string {
 // Curated holds the versions we know are reachable via the standard URL
 // pattern. Newest first. Update when ARM ships a new release.
 var Curated = []string{
+	"15.2.rel1",
+	"14.3.rel1",
 	"14.2.rel1",
 	"13.3.rel1",
 	"13.2.rel1",
