@@ -1,5 +1,8 @@
 module github.com/mihnen/armup
 
-go 1.24.2
+go 1.25.0
 
-require github.com/ulikunitz/xz v0.5.15 // indirect
+require (
+	github.com/ulikunitz/xz v0.5.15
+	golang.org/x/sys v0.43.0
+)

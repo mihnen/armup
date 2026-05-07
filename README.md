@@ -23,30 +23,54 @@ management story. This tool:
 
 ## Install
 
-Build for your platform:
+### Linux / macOS
 
 ```sh
 go build -o armup ./cmd/armup
 mv armup ~/.local/bin/        # or anywhere on $PATH
-```
-
-Cross-compile (Windows runtime support is stubbed for now — the binary builds
-clean but several commands return "unsupported on this platform"):
-
-```sh
-GOOS=linux   GOARCH=amd64 go build -o armup        ./cmd/armup
-GOOS=darwin  GOARCH=arm64 go build -o armup        ./cmd/armup
-GOOS=windows GOARCH=amd64 go build -o armup.exe    ./cmd/armup
-```
-
-Then run once to set up the data directory and add the `PATH` entry to your
-shell rc files (`~/.zshrc` and `~/.bashrc`):
-
-```sh
-armup init
+armup init                    # creates data dir, appends PATH line to .zshrc/.bashrc
 ```
 
 Open a fresh shell after `init` so the new `PATH` is loaded.
+
+### Windows
+
+Grab `armup-vX.Y.Z-windows-amd64.zip` from the
+[Releases page](../../releases/latest), extract `armup.exe` to a folder on
+your PATH (e.g. `%USERPROFILE%\bin`), then:
+
+```cmd
+armup init
+```
+
+That writes the toolchain `bin` directory into `HKCU\Environment\Path`
+(no admin required). **Open a new terminal** so the new PATH is loaded —
+already-running shells won't see it. After that, every other command works
+the same as on Linux/macOS.
+
+A few Windows-specific things to know:
+
+- `armup use` swaps the active toolchain via an NTFS junction at
+  `%LOCALAPPDATA%\armup\current`. Junctions don't need admin or Developer
+  Mode.
+- The `versions/` directory and `current` junction must live on the same
+  volume — they do by default, both under `%LOCALAPPDATA%`.
+- ARM ships the toolchain as a `.zip` for Windows (vs `.tar.xz` on
+  Linux/macOS). Extraction is single-threaded and antivirus scanners can
+  slow the first install considerably; allowlisting `%LOCALAPPDATA%\armup`
+  helps.
+- Some toolchain include paths can exceed the legacy 260-character limit.
+  If you hit `path too long` errors during a build, enable
+  [LongPathsEnabled](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)
+  in the Group Policy Editor or the registry.
+
+### Cross-compiling from source
+
+```sh
+GOOS=linux   GOARCH=amd64 go build -o armup       ./cmd/armup
+GOOS=darwin  GOARCH=arm64 go build -o armup       ./cmd/armup
+GOOS=windows GOARCH=amd64 go build -o armup.exe   ./cmd/armup
+```
 
 ## Usage
 
@@ -68,10 +92,10 @@ shell that has `PATH` set up correctly.
 
 ## Shell completion
 
-`armup` ships dynamic completion for bash and zsh — `armup use <TAB>` lists
-installed versions, `armup install <TAB>` lists available versions, etc. The
-candidate lists are queried from the binary at completion time, so they
-always reflect your current state.
+`armup` ships dynamic completion for bash, zsh, and PowerShell — `armup use
+<TAB>` lists installed versions, `armup install <TAB>` lists available
+versions, etc. The candidate lists are queried from the binary at completion
+time, so they always reflect your current state.
 
 ### zsh
 
@@ -100,6 +124,19 @@ echo 'source <(armup completion zsh)' >> ~/.zshrc
 ```sh
 echo 'source <(armup completion bash)' >> ~/.bashrc
 ```
+
+### PowerShell
+
+Append to your profile (`$PROFILE`) so it loads in every new session:
+
+```powershell
+if (-not (Test-Path $PROFILE)) { New-Item -Type File -Force -Path $PROFILE }
+Add-Content -Path $PROFILE -Value "`narmup completion powershell | Out-String | Invoke-Expression"
+```
+
+Then open a new PowerShell session (or run the same line interactively to
+load it into the current one). `armup use <TAB>` should now list installed
+versions.
 
 ## Extraction performance
 

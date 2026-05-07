@@ -17,7 +17,7 @@ _armup() {
       COMPREPLY=( $(compgen -W "$(command armup __complete versions-available 2>/dev/null)" -- "$cur") )
       ;;
     completion)
-      COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
+      COMPREPLY=( $(compgen -W "bash zsh powershell" -- "$cur") )
       ;;
   esac
 }

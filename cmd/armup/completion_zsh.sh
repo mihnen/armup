@@ -19,7 +19,7 @@ _armup() {
       compadd -a candidates
       ;;
     completion)
-      compadd bash zsh
+      compadd bash zsh powershell
       ;;
   esac
 }

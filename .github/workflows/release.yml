@@ -7,7 +7,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-*'
   # Manual trigger from the Actions tab. Builds run; the release job is
-  # skipped (no tag → nothing to publish). Tarballs are still attached to
+  # skipped (no tag → nothing to publish). Archives are still attached to
   # the workflow run as artifacts for download.
   workflow_dispatch:
 
@@ -21,10 +21,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { goos: linux,  goarch: amd64 }
-          - { goos: linux,  goarch: arm64 }
-          - { goos: darwin, goarch: amd64 }
-          - { goos: darwin, goarch: arm64 }
+          - { goos: linux,   goarch: amd64, archive: tar.gz, ext: ''     }
+          - { goos: linux,   goarch: arm64, archive: tar.gz, ext: ''     }
+          - { goos: darwin,  goarch: amd64, archive: tar.gz, ext: ''     }
+          - { goos: darwin,  goarch: arm64, archive: tar.gz, ext: ''     }
+          - { goos: windows, goarch: amd64, archive: zip,    ext: '.exe' }
     steps:
       - uses: actions/checkout@v6
 
@@ -37,17 +38,29 @@ jobs:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          EXT: ${{ matrix.ext }}
+          ARCHIVE: ${{ matrix.archive }}
         run: |
+          set -euo pipefail
           name="armup-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
           mkdir -p "dist/${name}"
-          go build -trimpath -ldflags='-s -w' -o "dist/${name}/armup" ./cmd/armup
+          go build -trimpath -ldflags='-s -w' -o "dist/${name}/armup${EXT}" ./cmd/armup
           cp LICENSE README.md "dist/${name}/"
-          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          case "$ARCHIVE" in
+            tar.gz)
+              tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+              ;;
+            zip)
+              (cd dist && zip -qr "${name}.zip" "${name}")
+              ;;
+          esac
 
       - uses: actions/upload-artifact@v7
         with:
           name: armup-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
           if-no-files-found: error
           retention-days: 1
 
@@ -63,12 +76,13 @@ jobs:
 
       - name: Generate SHA256SUMS
         working-directory: dist
-        run: sha256sum *.tar.gz > SHA256SUMS
+        run: sha256sum armup-*.tar.gz armup-*.zip > SHA256SUMS
 
       - uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/*.tar.gz
+            dist/*.zip
             dist/SHA256SUMS
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
