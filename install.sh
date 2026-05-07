@@ -35,9 +35,11 @@ else
   err "no sha256 tool found (need sha256sum or shasum)"; exit 1
 fi
 
-# Find the latest release tag.
+# Find the most recent release tag. Use /releases (not /releases/latest)
+# because /latest only returns non-prerelease tags; we want the most recent
+# regardless of prerelease status.
 echo "Querying latest release..."
-tag=$(curl -fsSL "https://api.github.com/repos/$OWNER/$REPO/releases/latest" \
+tag=$(curl -fsSL "https://api.github.com/repos/$OWNER/$REPO/releases" \
   | sed -nE 's/.*"tag_name": *"([^"]+)".*/\1/p' | head -n1)
 if [ -z "$tag" ]; then
   err "failed to determine latest release"; exit 1

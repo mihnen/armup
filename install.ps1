@@ -17,7 +17,10 @@ $os   = 'windows'
 $arch = 'amd64'
 
 Write-Host 'Querying latest release...'
-$release = Invoke-RestMethod "https://api.github.com/repos/$Owner/$Repo/releases/latest" -UseBasicParsing
+# Use /releases (not /releases/latest) so we still find prerelease tags;
+# /latest skips prereleases and 404s if there are no stable releases.
+$releases = Invoke-RestMethod "https://api.github.com/repos/$Owner/$Repo/releases" -UseBasicParsing
+$release = $releases | Where-Object { -not $_.draft } | Select-Object -First 1
 $tag = $release.tag_name
 if (-not $tag) { throw "could not determine latest release tag" }
 Write-Host "Latest release: $tag"
