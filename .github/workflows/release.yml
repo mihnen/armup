@@ -6,6 +6,10 @@ on:
       # Strict semver: vMAJOR.MINOR.PATCH and vMAJOR.MINOR.PATCH-PRERELEASE.
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  # Manual trigger from the Actions tab. Builds run; the release job is
+  # skipped (no tag → nothing to publish). Tarballs are still attached to
+  # the workflow run as artifacts for download.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -49,6 +53,7 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
