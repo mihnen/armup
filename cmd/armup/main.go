@@ -16,6 +16,10 @@ import (
 	"github.com/mihnen/armup/internal/store"
 )
 
+// version is set via -ldflags='-X main.version=...' by the release workflow.
+// Local `go build` runs without the flag and report "dev".
+var version = "dev"
+
 //go:embed completion_bash.sh
 var bashCompletion string
 
@@ -39,6 +43,7 @@ commands:
   uninstall <version> [-f]   Remove a version (-f to remove the active one)
   which                      Print the active toolchain's bin directory
   completion <shell>         Print a shell-completion script (bash, zsh, powershell)
+  version                    Print armup's version
   help                       Show this help
 
 The active version is exposed through a single PATH entry pointing at
@@ -81,6 +86,8 @@ func main() {
 		err = cmdCompletion(args)
 	case "__complete":
 		err = cmdCompleteHidden(args)
+	case "version", "--version", "-v":
+		fmt.Println(version)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
@@ -291,7 +298,7 @@ func cmdCompleteHidden(args []string) error {
 	case "subcommands":
 		for _, c := range []string{
 			"init", "available", "list", "install", "use", "current",
-			"uninstall", "which", "completion", "help",
+			"uninstall", "which", "completion", "version", "help",
 		} {
 			fmt.Println(c)
 		}
