@@ -15,6 +15,34 @@ import (
 	"github.com/mihnen/armup/internal/paths"
 )
 
+// promoteExtraction moves the toolchain root out of stagingDir and into
+// verDir. ARM ships two layouts and we have to handle both:
+//
+//   - "wrapped"   (most archives): top of the archive is a single directory
+//     named innerName, with bin/, lib/, etc. inside it.
+//   - "unwrapped" (newer Windows zips, 15.x): bin/, lib/, etc. sit at the
+//     top of the archive directly, with no wrapping directory.
+//
+// If stagingDir/<innerName> exists, rename it to verDir and remove the now-
+// empty stagingDir. Otherwise rename stagingDir itself to verDir.
+func promoteExtraction(stagingDir, innerName, verDir string) error {
+	innerDir := filepath.Join(stagingDir, innerName)
+	src := innerDir
+	if _, err := os.Stat(innerDir); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		src = stagingDir
+	}
+	if err := os.Rename(src, verDir); err != nil {
+		return fmt.Errorf("rename to %s: %w", verDir, err)
+	}
+	if src == innerDir {
+		os.RemoveAll(stagingDir)
+	}
+	return nil
+}
+
 // EnsureLayout creates the directory layout if missing.
 func EnsureLayout() error {
 	for _, d := range []string{paths.DataDir(), paths.VersionsDir(), paths.CacheDir()} {
@@ -163,31 +191,9 @@ func Install(ctx context.Context, version string, setCurrentIfFirst bool) error 
 	}
 	fmt.Printf("Extracted in %s\n", time.Since(extractStart).Round(time.Millisecond))
 
-	// ARM ships two layouts:
-	//   - "wrapped"   (most archives): top of the archive is the directory
-	//                 host.InnerDirName(version), real toolchain inside.
-	//   - "unwrapped" (newer Windows zips, 15.x and later): bin/, lib/, etc.
-	//                 sit at the top level of the archive.
-	// Detect which one we got and promote the appropriate directory to
-	// verDir.
-	innerDir := filepath.Join(stagingDir, host.InnerDirName(version))
-	src := innerDir
-	if _, err := os.Stat(innerDir); err != nil {
-		if !os.IsNotExist(err) {
-			os.RemoveAll(stagingDir)
-			return err
-		}
-		// Unwrapped: the staging dir itself is the toolchain root.
-		src = stagingDir
-	}
-	if err := os.Rename(src, verDir); err != nil {
+	if err := promoteExtraction(stagingDir, host.InnerDirName(version), verDir); err != nil {
 		os.RemoveAll(stagingDir)
-		return fmt.Errorf("rename to %s: %w", verDir, err)
-	}
-	// If we promoted the inner dir, the staging dir is now empty; clean up.
-	// If we promoted the staging dir itself, it's already gone.
-	if src == innerDir {
-		os.RemoveAll(stagingDir)
+		return err
 	}
 
 	if setCurrentIfFirst {

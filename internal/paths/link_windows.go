@@ -110,7 +110,7 @@ func buildJunctionReparseBuffer(absTarget string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	subBytes := (len(subUTF16) - 1) * 2   // exclude trailing NUL from length
+	subBytes := (len(subUTF16) - 1) * 2 // exclude trailing NUL from length
 	printBytes := (len(printUTF16) - 1) * 2
 
 	pathBuf := make([]byte, 0, len(subUTF16)*2+len(printUTF16)*2)
