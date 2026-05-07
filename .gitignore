@@ -1,0 +1,10 @@
+# Local build artifacts
+/armup
+/armup.exe
+*.test
+*.out
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
