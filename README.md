@@ -60,10 +60,46 @@ armup use 12.3.rel1              # switch active version
 armup current                    # print active version
 armup which                      # print active toolchain bin dir
 armup uninstall 12.3.rel1        # remove a version (refuses if active without -f)
+armup completion zsh             # print shell-completion script (also: bash)
 ```
 
 `use` updates a single symlink, so the switch is visible immediately to any
 shell that has `PATH` set up correctly.
+
+## Shell completion
+
+`armup` ships dynamic completion for bash and zsh — `armup use <TAB>` lists
+installed versions, `armup install <TAB>` lists available versions, etc. The
+candidate lists are queried from the binary at completion time, so they
+always reflect your current state.
+
+### zsh
+
+Either drop the script into a directory on your `fpath`:
+
+```sh
+mkdir -p ~/.zsh/completions
+armup completion zsh > ~/.zsh/completions/_armup
+```
+
+and add this **before** `compinit` runs (in oh-my-zsh setups, before
+`source $ZSH/oh-my-zsh.sh`):
+
+```sh
+fpath=(~/.zsh/completions $fpath)
+```
+
+Or source it on every shell start (slightly slower, always fresh):
+
+```sh
+echo 'source <(armup completion zsh)' >> ~/.zshrc
+```
+
+### bash
+
+```sh
+echo 'source <(armup completion bash)' >> ~/.bashrc
+```
 
 ## Extraction performance
 

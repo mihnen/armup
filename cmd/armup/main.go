@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +15,12 @@ import (
 	"github.com/mihnen/armup/internal/shell"
 	"github.com/mihnen/armup/internal/store"
 )
+
+//go:embed completion_bash.sh
+var bashCompletion string
+
+//go:embed completion_zsh.sh
+var zshCompletion string
 
 const usage = `armup - manage arm-none-eabi GCC toolchain versions
 
@@ -28,6 +35,7 @@ commands:
   current                    Print the active version
   uninstall <version> [-f]   Remove a version (-f to remove the active one)
   which                      Print the active toolchain's bin directory
+  completion <shell>         Print a shell-completion script (bash or zsh)
   help                       Show this help
 
 The active version is exposed through a single PATH entry pointing at
@@ -66,6 +74,10 @@ func main() {
 		err = cmdUninstall(args)
 	case "which":
 		err = cmdWhich(args)
+	case "completion":
+		err = cmdCompletion(args)
+	case "__complete":
+		err = cmdCompleteHidden(args)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
@@ -242,5 +254,57 @@ func cmdWhich(args []string) error {
 	fs := flag.NewFlagSet("which", flag.ExitOnError)
 	fs.Parse(args)
 	fmt.Println(paths.ActiveBinDir())
+	return nil
+}
+
+func cmdCompletion(args []string) error {
+	fs := flag.NewFlagSet("completion", flag.ExitOnError)
+	fs.Parse(args)
+	if fs.NArg() != 1 {
+		return errors.New("usage: armup completion <bash|zsh>")
+	}
+	switch fs.Arg(0) {
+	case "bash":
+		fmt.Print(bashCompletion)
+	case "zsh":
+		fmt.Print(zshCompletion)
+	default:
+		return fmt.Errorf("unsupported shell %q (supported: bash, zsh)", fs.Arg(0))
+	}
+	return nil
+}
+
+// cmdCompleteHidden is invoked by the shell-completion scripts to enumerate
+// candidate values for the current word. Output is one candidate per line.
+// Unknown kinds produce no output (and exit 0) so completion stays silent
+// rather than spamming errors.
+func cmdCompleteHidden(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	switch args[0] {
+	case "subcommands":
+		for _, c := range []string{
+			"init", "available", "list", "install", "use", "current",
+			"uninstall", "which", "completion", "help",
+		} {
+			fmt.Println(c)
+		}
+	case "versions-installed":
+		versions, _ := store.List()
+		for _, v := range versions {
+			fmt.Println(v)
+		}
+	case "versions-available":
+		if cached, _ := arm.LoadCachedAvailable(paths.AvailableFile()); len(cached) > 0 {
+			for _, v := range cached {
+				fmt.Println(v)
+			}
+			return nil
+		}
+		for _, v := range arm.Curated {
+			fmt.Println(v)
+		}
+	}
 	return nil
 }
