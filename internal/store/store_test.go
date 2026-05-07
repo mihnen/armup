@@ -233,6 +233,27 @@ func TestUninstallNonActive(t *testing.T) {
 	}
 }
 
+// TestReset wipes everything armup created under DataDir. With multiple
+// versions installed and `current` linked, after Reset the data dir is gone.
+func TestReset(t *testing.T) {
+	dataDir := withTempDataDir(t)
+	if err := EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, paths.VersionDir("12.3.rel1"))
+	mustMkdir(t, paths.VersionDir("14.3.rel1"))
+	mustWrite(t, filepath.Join(paths.CacheDir(), "stale.tar.xz"), "junk")
+	if err := Use("14.3.rel1"); err != nil {
+		t.Fatal(err)
+	}
+	mustExist(t, dataDir)
+
+	if err := Reset(); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	mustNotExist(t, dataDir)
+}
+
 // helpers
 
 func mustMkdir(t *testing.T, dir string) {

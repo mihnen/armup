@@ -43,6 +43,14 @@ func promoteExtraction(stagingDir, innerName, verDir string) error {
 	return nil
 }
 
+// Reset removes everything armup has created under DataDir(): all installed
+// versions, the current link, the cache, and any ancillary state. Does not
+// touch the armup binary itself or any shell rc / registry config — those
+// are the caller's responsibility.
+func Reset() error {
+	return os.RemoveAll(paths.DataDir())
+}
+
 // EnsureLayout creates the directory layout if missing.
 func EnsureLayout() error {
 	for _, d := range []string{paths.DataDir(), paths.VersionsDir(), paths.CacheDir()} {

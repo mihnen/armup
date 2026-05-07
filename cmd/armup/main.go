@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	_ "embed"
 	"errors"
@@ -8,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/mihnen/armup/internal/arm"
@@ -42,6 +45,7 @@ commands:
   use <version>              Switch the active version
   current                    Print the active version
   uninstall <version> [-f]   Remove a version (-f to remove the active one)
+  reset [-f] [--keep-shell]  Remove every installed version and armup data
   which                      Print the active toolchain's bin directory
   completion <shell>         Print a shell-completion script (bash, zsh, powershell)
   self-update                Replace the running binary with the latest release
@@ -82,6 +86,8 @@ func main() {
 		err = cmdCurrent(args)
 	case "uninstall", "remove", "rm":
 		err = cmdUninstall(args)
+	case "reset":
+		err = cmdReset(args)
 	case "which":
 		err = cmdWhich(args)
 	case "completion":
@@ -271,6 +277,66 @@ func cmdWhich(args []string) error {
 	return nil
 }
 
+// cmdReset wipes everything armup has created: the data dir (every
+// installed toolchain + cache + current link) and, by default, the shell
+// PATH integration too. Prompts for confirmation unless -f is passed.
+func cmdReset(args []string) error {
+	fs := flag.NewFlagSet("reset", flag.ExitOnError)
+	force := fs.Bool("f", false, "skip confirmation prompt")
+	fs.BoolVar(force, "force", false, "skip confirmation prompt")
+	keepShell := fs.Bool("keep-shell", false, "leave the shell rc / registry PATH entry alone")
+	fs.Parse(args)
+
+	dataDir := paths.DataDir()
+	fmt.Printf("This will remove %s\n", dataDir)
+	if !*keepShell {
+		fmt.Println("and remove armup's PATH entry from your shell rc / Windows registry.")
+	}
+	if !*force {
+		fmt.Print("Continue? [y/N] ")
+		reader := bufio.NewReader(os.Stdin)
+		ans, _ := reader.ReadString('\n')
+		ans = strings.TrimSpace(strings.ToLower(ans))
+		if ans != "y" && ans != "yes" {
+			fmt.Println("aborted")
+			return nil
+		}
+	}
+
+	if err := store.Reset(); err != nil {
+		return fmt.Errorf("remove %s: %w", dataDir, err)
+	}
+	fmt.Printf("Removed %s\n", dataDir)
+
+	if !*keepShell {
+		modified, err := shell.RemoveFromPath(paths.ActiveBinDir())
+		if err != nil {
+			if errors.Is(err, shell.ErrUnsupported) {
+				fmt.Println("Shell cleanup not supported on this platform; remove the PATH entry manually.")
+			} else {
+				return fmt.Errorf("remove shell PATH entry: %w", err)
+			}
+		} else if len(modified) == 0 {
+			fmt.Println("No shell PATH entry to remove.")
+		} else {
+			for _, f := range modified {
+				fmt.Printf("Removed PATH entry from %s\n", f)
+			}
+			fmt.Println("Open a new shell for the change to take effect.")
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("To finish removing armup, delete the binary itself, e.g.:")
+	if runtime.GOOS == "windows" {
+		// io.WriteString avoids fmt vet parsing the %USERPROFILE% literal.
+		_, _ = os.Stdout.WriteString("    del %USERPROFILE%\\bin\\armup.exe\n")
+	} else {
+		fmt.Println("    rm ~/.local/bin/armup")
+	}
+	return nil
+}
+
 func cmdCompletion(args []string) error {
 	fs := flag.NewFlagSet("completion", flag.ExitOnError)
 	fs.Parse(args)
@@ -302,7 +368,8 @@ func cmdCompleteHidden(args []string) error {
 	case "subcommands":
 		for _, c := range []string{
 			"init", "available", "list", "install", "use", "current",
-			"uninstall", "which", "completion", "self-update", "version", "help",
+			"uninstall", "reset", "which", "completion", "self-update",
+			"version", "help",
 		} {
 			fmt.Println(c)
 		}

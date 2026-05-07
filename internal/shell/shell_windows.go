@@ -68,6 +68,47 @@ func alreadyOnPath(pathVar, dir string) bool {
 	return false
 }
 
+// RemoveFromPath removes `dir` from HKCU\Environment\Path if present.
+// Returns the registry path as the "modified" label when a change was made,
+// nil if dir wasn't on the path.
+func RemoveFromPath(dir string) ([]string, error) {
+	const keyPath = `Environment`
+	k, err := registry.OpenKey(registry.CURRENT_USER, keyPath,
+		registry.QUERY_VALUE|registry.SET_VALUE)
+	if err != nil {
+		return nil, fmt.Errorf("open HKCU\\%s: %w", keyPath, err)
+	}
+	defer k.Close()
+
+	cur, _, err := k.GetStringValue("Path")
+	if err != nil && err != registry.ErrNotExist {
+		return nil, fmt.Errorf("read HKCU\\%s\\Path: %w", keyPath, err)
+	}
+	if !alreadyOnPath(cur, dir) {
+		return nil, nil
+	}
+
+	want := strings.ToLower(filepath.Clean(dir))
+	var kept []string
+	for _, entry := range strings.Split(cur, ";") {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			continue
+		}
+		if strings.ToLower(filepath.Clean(trimmed)) == want {
+			continue
+		}
+		kept = append(kept, trimmed)
+	}
+	next := strings.Join(kept, ";")
+
+	if err := k.SetExpandStringValue("Path", next); err != nil {
+		return nil, fmt.Errorf("write HKCU\\%s\\Path: %w", keyPath, err)
+	}
+	broadcastSettingChange()
+	return []string{`HKCU\Environment\Path`}, nil
+}
+
 // broadcastSettingChange tells every top-level window the user environment
 // changed, so their copy of the env block is refreshed. Without this, only
 // processes started after the registry write see the new PATH.

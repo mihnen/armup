@@ -43,34 +43,44 @@ func CurrentHost() (Host, error) {
 	return Host{}, fmt.Errorf("arm: unsupported platform %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
-// ResolveForVersion picks the actual triple to use for `version`.
+// ResolveForVersion picks the actual triple to use for `version` and
+// confirms ARM actually publishes that archive. Returns a clear error
+// instead of letting the caller dive into a confusing checksum 404 later.
 //
-// Unix triples are stable across releases — this is a no-op there.
+// Unix: triple is stable; one HEAD request to verify the archive exists.
 //
-// Windows is messier: ARM ships an i686 (32-bit) mingw build for every
-// release back to 11.x, but only added a native x86_64 mingw variant at
-// 14.2.rel1. We prefer x86_64 when available and fall back to i686
-// otherwise. Both produce the same arm-none-eabi compiler; the difference
-// is just whether the compiler itself runs as a 32- or 64-bit Windows
-// process.
+// Windows: ARM ships an i686 (32-bit) mingw build for every release back
+// to 11.x, but only added a native x86_64 mingw variant at 14.2.rel1.
+// We prefer x86_64 when available and fall back to i686 otherwise. Both
+// produce the same arm-none-eabi compiler; the difference is just whether
+// the compiler itself runs as a 32- or 64-bit Windows process.
 func (h Host) ResolveForVersion(ctx context.Context, version string) (Host, error) {
-	if runtime.GOOS != "windows" {
-		return h, nil
-	}
-	for _, triple := range []string{
-		"mingw-w64-x86_64-arm-none-eabi",
-		"mingw-w64-i686-arm-none-eabi",
-	} {
-		cand := Host{Triple: triple, Ext: h.Ext}
-		ok, err := probeArchive(ctx, cand.ArchiveURL(version))
-		if err != nil {
-			return Host{}, err
+	if runtime.GOOS == "windows" {
+		for _, triple := range []string{
+			"mingw-w64-x86_64-arm-none-eabi",
+			"mingw-w64-i686-arm-none-eabi",
+		} {
+			cand := Host{Triple: triple, Ext: h.Ext}
+			ok, err := probeArchive(ctx, cand.ArchiveURL(version))
+			if err != nil {
+				return Host{}, err
+			}
+			if ok {
+				return cand, nil
+			}
 		}
-		if ok {
-			return cand, nil
-		}
+		return Host{}, fmt.Errorf("ARM does not publish a Windows build for %s", version)
 	}
-	return Host{}, fmt.Errorf("ARM does not publish a Windows build for %s", version)
+
+	ok, err := probeArchive(ctx, h.ArchiveURL(version))
+	if err != nil {
+		return Host{}, err
+	}
+	if !ok {
+		return Host{}, fmt.Errorf("ARM does not publish a %s build for %s (no archive at %s)",
+			h.Triple, version, h.ArchiveURL(version))
+	}
+	return h, nil
 }
 
 // InnerDirName returns the top-level directory name inside the archive that
