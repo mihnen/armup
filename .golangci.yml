@@ -1,0 +1,47 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck      # unchecked errors (with the per-function excludes below)
+    - govet         # standard go vet checks
+    - ineffassign   # ineffective assignments
+    - staticcheck   # broad set of bug-finding checks
+    - unused        # unused vars, funcs, fields
+    - gocritic      # style + diagnostic suggestions
+    - misspell      # English-language typos
+  settings:
+    errcheck:
+      check-type-assertions: true
+      # Idiomatic Go patterns where the error is intentionally ignored:
+      #   - flag.FlagSet.Parse: with ExitOnError it never returns
+      #   - fmt.Fprint* to stdout/stderr: the write either succeeds or
+      #     the program is doomed anyway
+      #   - (io.Closer).Close: standard defer pattern; failures here
+      #     typically don't change behavior
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*flag.FlagSet).Parse
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*os.File).WriteString
+        - (*compress/gzip.Reader).Close
+        - (*archive/zip.ReadCloser).Close
+        - os.Remove
+        - os.RemoveAll
+        - os.Rename
+    gocritic:
+      disabled-checks:
+        - ifElseChain   # we use case-style returns; not worth rewriting
+  exclusions:
+    rules:
+      # Tests can be loose with errors on os.Setenv / os.MkdirAll / etc.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

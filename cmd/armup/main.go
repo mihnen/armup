@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -58,10 +59,15 @@ in any new shell (and in existing shells, since PATH lookups follow the
 symlink). Run ` + "`init`" + ` once to create the data dir and update your shell rc.
 `
 
-func main() {
+// main is intentionally a thin wrapper around run() so that any deferred
+// cleanup (signal-handler cancel, etc.) actually executes — os.Exit skips
+// pending defers, but a normal return doesn't.
+func main() { os.Exit(run()) }
+
+func run() int {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		return 2
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -103,16 +109,43 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", cmd)
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		return 2
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
+}
+
+// newFlagSet builds an ExitOnError flag set whose -h / --help output is a
+// friendly per-subcommand description plus the flag list, instead of the
+// stdlib default which prints only the flags.
+func newFlagSet(cmd, summary, doc string) *flag.FlagSet {
+	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
+	fs.Usage = func() {
+		out := fs.Output()
+		fmt.Fprintf(out, "Usage: armup %s\n", summary)
+		if d := strings.TrimSpace(doc); d != "" {
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, d)
+		}
+		var hasFlags bool
+		fs.VisitAll(func(*flag.Flag) { hasFlags = true })
+		if hasFlags {
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "Flags:")
+			fs.PrintDefaults()
+		}
+	}
+	return fs
 }
 
 func cmdInit(args []string) error {
-	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	fs := newFlagSet("init", "init",
+		`One-time setup. Creates the data directory and adds armup's bin/
+to your PATH (.zshrc/.bashrc on unix, HKCU\Environment\Path on
+Windows). Idempotent — safe to re-run.`)
 	fs.Parse(args)
 
 	if err := store.EnsureLayout(); err != nil {
@@ -140,16 +173,27 @@ func cmdInit(args []string) error {
 }
 
 func cmdAvailable(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("available", flag.ExitOnError)
+	fs := newFlagSet("available", "available [--refresh] [--json]",
+		`List ARM toolchain versions you can install. By default reads
+from the local cache (or the curated list if no cache exists).
+With --refresh, re-queries ARM and falls back to HEAD-probing
+the curated versions if ARM's downloads page is blocked.
+
+With --json, output the list as JSON with the source ("cached",
+"curated", or "refresh") for scripting.`)
 	refresh := fs.Bool("refresh", false, "fetch the latest list from ARM")
+	asJSON := fs.Bool("json", false, "output as JSON")
 	fs.Parse(args)
+
+	var versions []string
+	var source string
 
 	if *refresh {
 		if err := store.EnsureLayout(); err != nil {
 			return err
 		}
 		fmt.Fprintln(os.Stderr, "Refreshing version list from developer.arm.com")
-		versions, err := arm.Refresh(ctx)
+		v, err := arm.Refresh(ctx)
 		if err != nil {
 			if !errors.Is(err, arm.ErrPageBlocked) {
 				return fmt.Errorf("refresh: %w", err)
@@ -159,30 +203,40 @@ func cmdAvailable(ctx context.Context, args []string) error {
 			if hErr != nil {
 				return hErr
 			}
-			versions, err = arm.ProbeCurated(ctx, host)
+			v, err = arm.ProbeCurated(ctx, host)
 			if err != nil {
 				return fmt.Errorf("probe: %w", err)
 			}
-			if len(versions) == 0 {
+			if len(v) == 0 {
 				return fmt.Errorf("no curated versions reachable")
 			}
 		}
-		if err := arm.SaveAvailable(paths.AvailableFile(), versions); err != nil {
+		if err := arm.SaveAvailable(paths.AvailableFile(), v); err != nil {
 			return err
 		}
-		printVersions(versions)
-		return nil
+		versions = v
+		source = "refresh"
+	} else {
+		cached, err := arm.LoadCachedAvailable(paths.AvailableFile())
+		if err != nil {
+			return err
+		}
+		if len(cached) > 0 {
+			versions = cached
+			source = "cached"
+		} else {
+			versions = arm.Curated
+			source = "curated"
+		}
 	}
 
-	cached, err := arm.LoadCachedAvailable(paths.AvailableFile())
-	if err != nil {
-		return err
+	if *asJSON {
+		return writeJSON(struct {
+			Source   string   `json:"source"`
+			Versions []string `json:"versions"`
+		}{source, versions})
 	}
-	if len(cached) > 0 {
-		printVersions(cached)
-		return nil
-	}
-	printVersions(arm.Curated)
+	printVersions(versions)
 	return nil
 }
 
@@ -192,19 +246,51 @@ func printVersions(v []string) {
 	}
 }
 
+// writeJSON writes v to stdout pretty-printed (2-space indent) with a
+// trailing newline.
+func writeJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
 func cmdList(args []string) error {
-	fs := flag.NewFlagSet("list", flag.ExitOnError)
+	fs := newFlagSet("list", "list [--json]",
+		`List the toolchain versions installed locally. The currently
+active version is marked with a leading '*'.
+
+With --json, output one record per version including its
+absolute path and active-status flag.`)
+	asJSON := fs.Bool("json", false, "output as JSON")
 	fs.Parse(args)
 
 	versions, err := store.List()
 	if err != nil {
 		return err
 	}
+	cur, _ := store.Current()
+
+	if *asJSON {
+		type entry struct {
+			Version string `json:"version"`
+			Current bool   `json:"current"`
+			Path    string `json:"path"`
+		}
+		out := make([]entry, 0, len(versions))
+		for _, v := range versions {
+			out = append(out, entry{
+				Version: v,
+				Current: v == cur,
+				Path:    paths.VersionDir(v),
+			})
+		}
+		return writeJSON(out)
+	}
+
 	if len(versions) == 0 {
 		fmt.Println("No versions installed. Run `armup available` to see options, then `armup install <version>`.")
 		return nil
 	}
-	cur, _ := store.Current()
 	for _, v := range versions {
 		mark := "  "
 		if v == cur {
@@ -216,19 +302,30 @@ func cmdList(args []string) error {
 }
 
 func cmdInstall(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("install", flag.ExitOnError)
+	fs := newFlagSet("install", "install <version>",
+		`Download, verify, and extract a version of the arm-none-eabi
+toolchain. Run 'armup available' for a list of versions.
+
+If no version is currently active, the newly-installed one becomes
+the active version.`)
 	fs.Parse(args)
 	if fs.NArg() != 1 {
-		return errors.New("usage: armup install <version>")
+		fs.Usage()
+		return errors.New("missing <version> argument")
 	}
 	return store.Install(ctx, arm.Normalize(fs.Arg(0)), true)
 }
 
 func cmdUse(args []string) error {
-	fs := flag.NewFlagSet("use", flag.ExitOnError)
+	fs := newFlagSet("use", "use <version>",
+		`Switch the active toolchain to <version>. Takes effect
+immediately in any shell whose PATH includes armup's bin
+directory — no shell reload needed, since PATH lookups follow
+the symlink/junction.`)
 	fs.Parse(args)
 	if fs.NArg() != 1 {
-		return errors.New("usage: armup use <version>")
+		fs.Usage()
+		return errors.New("missing <version> argument")
 	}
 	v := arm.Normalize(fs.Arg(0))
 	if err := store.Use(v); err != nil {
@@ -239,13 +336,34 @@ func cmdUse(args []string) error {
 }
 
 func cmdCurrent(args []string) error {
-	fs := flag.NewFlagSet("current", flag.ExitOnError)
+	fs := newFlagSet("current", "current [--json]",
+		`Print the currently active toolchain version, or 'none' if
+no version is active.
+
+With --json, output {"version": "...", "path": "..."} or
+{"version": null} when none.`)
+	asJSON := fs.Bool("json", false, "output as JSON")
 	fs.Parse(args)
 
 	cur, err := store.Current()
 	if err != nil {
 		return err
 	}
+
+	if *asJSON {
+		type out struct {
+			Version *string `json:"version"`
+			Path    *string `json:"path,omitempty"`
+		}
+		var v out
+		if cur != "" {
+			path := paths.VersionDir(cur)
+			v.Version = &cur
+			v.Path = &path
+		}
+		return writeJSON(v)
+	}
+
 	if cur == "" {
 		fmt.Println("none")
 		return nil
@@ -255,12 +373,15 @@ func cmdCurrent(args []string) error {
 }
 
 func cmdUninstall(args []string) error {
-	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
+	fs := newFlagSet("uninstall", "uninstall [-f] <version>",
+		`Remove an installed toolchain version. Refuses to remove the
+currently active version unless -f / --force is passed.`)
 	force := fs.Bool("f", false, "remove even if it's the active version")
 	fs.BoolVar(force, "force", false, "remove even if it's the active version")
 	fs.Parse(args)
 	if fs.NArg() != 1 {
-		return errors.New("usage: armup uninstall [-f] <version>")
+		fs.Usage()
+		return errors.New("missing <version> argument")
 	}
 	v := arm.Normalize(fs.Arg(0))
 	if err := store.Uninstall(v, *force); err != nil {
@@ -271,8 +392,18 @@ func cmdUninstall(args []string) error {
 }
 
 func cmdWhich(args []string) error {
-	fs := flag.NewFlagSet("which", flag.ExitOnError)
+	fs := newFlagSet("which", "which [--json]",
+		`Print the absolute path of the active toolchain's bin/ directory.
+This is the directory armup adds to your PATH at init.
+
+With --json, output {"path": "..."}.`)
+	asJSON := fs.Bool("json", false, "output as JSON")
 	fs.Parse(args)
+	if *asJSON {
+		return writeJSON(struct {
+			Path string `json:"path"`
+		}{paths.ActiveBinDir()})
+	}
 	fmt.Println(paths.ActiveBinDir())
 	return nil
 }
@@ -281,7 +412,11 @@ func cmdWhich(args []string) error {
 // installed toolchain + cache + current link) and, by default, the shell
 // PATH integration too. Prompts for confirmation unless -f is passed.
 func cmdReset(args []string) error {
-	fs := flag.NewFlagSet("reset", flag.ExitOnError)
+	fs := newFlagSet("reset", "reset [-f] [--keep-shell]",
+		`Remove every installed toolchain version, the cache, and (by
+default) armup's PATH entry from your shell rc / Windows registry.
+Confirms before deleting unless -f / --force is passed. Does not
+remove the armup binary itself.`)
 	force := fs.Bool("f", false, "skip confirmation prompt")
 	fs.BoolVar(force, "force", false, "skip confirmation prompt")
 	keepShell := fs.Bool("keep-shell", false, "leave the shell rc / registry PATH entry alone")
@@ -338,10 +473,15 @@ func cmdReset(args []string) error {
 }
 
 func cmdCompletion(args []string) error {
-	fs := flag.NewFlagSet("completion", flag.ExitOnError)
+	fs := newFlagSet("completion", "completion <bash|zsh|powershell>",
+		`Print a shell-completion script. Source the output in your
+shell to enable tab-completion of subcommands and version
+arguments. See README's "Shell completion" section for the
+recommended install pattern per shell.`)
 	fs.Parse(args)
 	if fs.NArg() != 1 {
-		return errors.New("usage: armup completion <bash|zsh|powershell>")
+		fs.Usage()
+		return errors.New("missing <shell> argument")
 	}
 	switch fs.Arg(0) {
 	case "bash":

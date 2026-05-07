@@ -169,7 +169,7 @@ func writeEntry(dst string, hdr *tar.Header, r io.Reader) error {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		return os.MkdirAll(target, os.FileMode(hdr.Mode)&0o777|0o700)
-	case tar.TypeReg, tar.TypeRegA:
+	case tar.TypeReg:
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}

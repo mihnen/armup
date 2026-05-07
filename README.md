@@ -121,11 +121,16 @@ armup use <version>              switch the active version
 armup current                    print the active version
 armup which                      print the active toolchain's bin directory
 armup uninstall <version> [-f]   remove a version (-f to remove the active one)
-armup reset [-f] [--keep-shell]  remove all versions and armup data; --keep-shell leaves PATH config
+armup reset [-f] [--keep-shell]  remove all versions and armup data
 armup completion <shell>         print a shell-completion script (bash, zsh, powershell)
 armup self-update                replace the running binary with the latest release
 armup version                    print armup's version
 ```
+
+Run `armup <command> -h` for command-specific help.
+
+`armup list`, `armup available`, `armup current`, and `armup which` all
+accept `--json` for scripting.
 
 `use` updates a single link; the switch is visible immediately in any shell
 whose PATH includes the toolchain directory.
