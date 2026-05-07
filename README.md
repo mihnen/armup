@@ -122,6 +122,7 @@ armup current                    print the active version
 armup which                      print the active toolchain's bin directory
 armup uninstall <version> [-f]   remove a version (-f to remove the active one)
 armup completion <shell>         print a shell-completion script (bash, zsh, powershell)
+armup self-update                replace the running binary with the latest release
 armup version                    print armup's version
 ```
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/mihnen/armup/internal/arm"
 	"github.com/mihnen/armup/internal/paths"
+	"github.com/mihnen/armup/internal/selfupdate"
 	"github.com/mihnen/armup/internal/shell"
 	"github.com/mihnen/armup/internal/store"
 )
@@ -43,6 +44,7 @@ commands:
   uninstall <version> [-f]   Remove a version (-f to remove the active one)
   which                      Print the active toolchain's bin directory
   completion <shell>         Print a shell-completion script (bash, zsh, powershell)
+  self-update                Replace the running binary with the latest release
   version                    Print armup's version
   help                       Show this help
 
@@ -84,6 +86,8 @@ func main() {
 		err = cmdWhich(args)
 	case "completion":
 		err = cmdCompletion(args)
+	case "self-update":
+		err = selfupdate.Run(ctx, version)
 	case "__complete":
 		err = cmdCompleteHidden(args)
 	case "version", "--version", "-v":
@@ -298,7 +302,7 @@ func cmdCompleteHidden(args []string) error {
 	case "subcommands":
 		for _, c := range []string{
 			"init", "available", "list", "install", "use", "current",
-			"uninstall", "which", "completion", "version", "help",
+			"uninstall", "which", "completion", "self-update", "version", "help",
 		} {
 			fmt.Println(c)
 		}

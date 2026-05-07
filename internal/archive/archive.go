@@ -10,11 +10,13 @@ import (
 )
 
 // Extract unpacks src into dst (which must already exist). Format is chosen
-// by extension: .tar.xz or .zip. Honors ctx for cancellation.
+// by extension: .tar.xz, .tar.gz, or .zip. Honors ctx for cancellation.
 func Extract(ctx context.Context, src, dst string) error {
 	switch {
 	case strings.HasSuffix(src, ".tar.xz"):
 		return extractTarXZ(ctx, src, dst)
+	case strings.HasSuffix(src, ".tar.gz"):
+		return extractTarGZ(ctx, src, dst)
 	case strings.HasSuffix(src, ".zip"):
 		return extractZip(ctx, src, dst)
 	default:
