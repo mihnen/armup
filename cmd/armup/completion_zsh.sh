@@ -1,35 +1,25 @@
 #compdef armup
 
 _armup() {
-  local context state state_descr line
-  typeset -A opt_args
+  local -a candidates
 
-  _arguments -C \
-    '1: :->subcommand' \
-    '*:: :->args'
+  if (( CURRENT == 2 )); then
+    candidates=(${(f)"$(command armup __complete subcommands 2>/dev/null)"})
+    compadd -a candidates
+    return
+  fi
 
-  case $state in
-    subcommand)
-      local -a subs
-      subs=(${(f)"$(command armup __complete subcommands 2>/dev/null)"})
-      _describe 'subcommand' subs
+  case $words[2] in
+    use|uninstall|rm|remove)
+      candidates=(${(f)"$(command armup __complete versions-installed 2>/dev/null)"})
+      compadd -a candidates
       ;;
-    args)
-      case $words[1] in
-        use|uninstall|rm|remove)
-          local -a versions
-          versions=(${(f)"$(command armup __complete versions-installed 2>/dev/null)"})
-          _describe 'installed version' versions
-          ;;
-        install)
-          local -a versions
-          versions=(${(f)"$(command armup __complete versions-available 2>/dev/null)"})
-          _describe 'available version' versions
-          ;;
-        completion)
-          _values 'shell' bash zsh
-          ;;
-      esac
+    install)
+      candidates=(${(f)"$(command armup __complete versions-available 2>/dev/null)"})
+      compadd -a candidates
+      ;;
+    completion)
+      compadd bash zsh
       ;;
   esac
 }
