@@ -1,5 +1,9 @@
 # armup
 
+[![ci](https://github.com/mihnen/armup/actions/workflows/ci.yml/badge.svg)](https://github.com/mihnen/armup/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/mihnen/armup?include_prereleases&sort=semver)](https://github.com/mihnen/armup/releases/latest)
+[![license](https://img.shields.io/github/license/mihnen/armup)](LICENSE)
+
 A version manager for ARM's official `arm-none-eabi` GCC toolchain — the one
 used for STM32 and other Cortex-M / Cortex-R / Cortex-A bare-metal work.
 Think `rustup` or `nvm`, but for arm-none-eabi.
@@ -29,16 +33,12 @@ hand-managing two or three installed versions side-by-side is fiddly. `armup`:
 
 ### Linux / macOS
 
-Download the appropriate `tar.gz` from the
-[Releases page](../../releases/latest), extract, and put `armup` on your
-PATH:
+One-liner — pulls the latest release, verifies SHA-256, drops `armup` into
+`~/.local/bin/`:
 
 ```sh
-curl -L -o armup.tar.gz \
-  https://github.com/mihnen/armup/releases/latest/download/armup-<version>-linux-amd64.tar.gz
-tar -xzf armup.tar.gz
-mv armup-*/armup ~/.local/bin/        # or anywhere on $PATH
-armup init                            # creates the data dir + appends a PATH line to .zshrc/.bashrc
+curl -sSL https://raw.githubusercontent.com/mihnen/armup/master/install.sh | sh
+armup init
 ```
 
 Open a fresh shell after `init` so the new PATH is loaded. From there:
@@ -49,18 +49,29 @@ armup install 14.3.rel1
 armup use 14.3.rel1
 ```
 
-Available archives:
+Override the install location with `ARMUP_INSTALL_DIR=...` before piping to
+`sh`. Or grab the tarball manually from the
+[Releases page](../../releases/latest) — archives are
 `armup-<version>-{linux-amd64, linux-arm64, darwin-amd64, darwin-arm64}.tar.gz`.
 
 ### Windows
 
-Download `armup-<version>-windows-amd64.zip` from the
-[Releases page](../../releases/latest), extract `armup.exe` to a folder on
-your PATH (e.g. `%USERPROFILE%\bin`), then:
+PowerShell one-liner — pulls the latest release, verifies SHA-256, drops
+`armup.exe` into `%USERPROFILE%\bin\`:
 
-```cmd
+```powershell
+iwr https://raw.githubusercontent.com/mihnen/armup/master/install.ps1 | iex
 armup init
 ```
+
+Override the install location with `$env:ARMUP_INSTALL_DIR = '...'` before
+running the line. Or grab the `.zip` manually from the
+[Releases page](../../releases/latest).
+
+> **First-run note:** the `armup.exe` binary isn't code-signed yet, so on
+> some Windows configurations SmartScreen will warn before the first launch
+> (More info → Run anyway). Code signing is on the roadmap for a future
+> release.
 
 `init` writes the toolchain `bin` directory into `HKCU\Environment\Path`
 (no admin required). **Open a new terminal** so the new PATH is loaded —
