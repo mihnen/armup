@@ -22,6 +22,9 @@ var bashCompletion string
 //go:embed completion_zsh.sh
 var zshCompletion string
 
+//go:embed completion_powershell.ps1
+var powershellCompletion string
+
 const usage = `armup - manage arm-none-eabi GCC toolchain versions
 
 usage: armup <command> [options]
@@ -35,7 +38,7 @@ commands:
   current                    Print the active version
   uninstall <version> [-f]   Remove a version (-f to remove the active one)
   which                      Print the active toolchain's bin directory
-  completion <shell>         Print a shell-completion script (bash or zsh)
+  completion <shell>         Print a shell-completion script (bash, zsh, powershell)
   help                       Show this help
 
 The active version is exposed through a single PATH entry pointing at
@@ -261,15 +264,17 @@ func cmdCompletion(args []string) error {
 	fs := flag.NewFlagSet("completion", flag.ExitOnError)
 	fs.Parse(args)
 	if fs.NArg() != 1 {
-		return errors.New("usage: armup completion <bash|zsh>")
+		return errors.New("usage: armup completion <bash|zsh|powershell>")
 	}
 	switch fs.Arg(0) {
 	case "bash":
 		fmt.Print(bashCompletion)
 	case "zsh":
 		fmt.Print(zshCompletion)
+	case "powershell", "pwsh":
+		fmt.Print(powershellCompletion)
 	default:
-		return fmt.Errorf("unsupported shell %q (supported: bash, zsh)", fs.Arg(0))
+		return fmt.Errorf("unsupported shell %q (supported: bash, zsh, powershell)", fs.Arg(0))
 	}
 	return nil
 }

@@ -74,16 +74,7 @@ func Use(version string) error {
 	if !st.IsDir() {
 		return fmt.Errorf("%s is not a directory", dir)
 	}
-	tmp := paths.CurrentLink() + ".tmp"
-	os.Remove(tmp)
-	if err := os.Symlink(dir, tmp); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, paths.CurrentLink()); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
+	return paths.SetCurrent(dir, paths.CurrentLink())
 }
 
 // Uninstall removes a version's directory. Refuses to remove the current
@@ -119,6 +110,11 @@ func Install(ctx context.Context, version string, setCurrentIfFirst bool) error 
 	verDir := paths.VersionDir(version)
 	if _, err := os.Stat(verDir); err == nil {
 		return fmt.Errorf("version %s is already installed at %s", version, verDir)
+	}
+
+	host, err = host.ResolveForVersion(ctx, version)
+	if err != nil {
+		return err
 	}
 
 	archiveName := host.ArchiveFilename(version)
@@ -166,17 +162,33 @@ func Install(ctx context.Context, version string, setCurrentIfFirst bool) error 
 		return err
 	}
 	fmt.Printf("Extracted in %s\n", time.Since(extractStart).Round(time.Millisecond))
+
+	// ARM ships two layouts:
+	//   - "wrapped"   (most archives): top of the archive is the directory
+	//                 host.InnerDirName(version), real toolchain inside.
+	//   - "unwrapped" (newer Windows zips, 15.x and later): bin/, lib/, etc.
+	//                 sit at the top level of the archive.
+	// Detect which one we got and promote the appropriate directory to
+	// verDir.
 	innerDir := filepath.Join(stagingDir, host.InnerDirName(version))
+	src := innerDir
 	if _, err := os.Stat(innerDir); err != nil {
-		os.RemoveAll(stagingDir)
-		return fmt.Errorf("expected directory %s after extraction: %w",
-			host.InnerDirName(version), err)
+		if !os.IsNotExist(err) {
+			os.RemoveAll(stagingDir)
+			return err
+		}
+		// Unwrapped: the staging dir itself is the toolchain root.
+		src = stagingDir
 	}
-	if err := os.Rename(innerDir, verDir); err != nil {
+	if err := os.Rename(src, verDir); err != nil {
 		os.RemoveAll(stagingDir)
 		return fmt.Errorf("rename to %s: %w", verDir, err)
 	}
-	os.RemoveAll(stagingDir)
+	// If we promoted the inner dir, the staging dir is now empty; clean up.
+	// If we promoted the staging dir itself, it's already gone.
+	if src == innerDir {
+		os.RemoveAll(stagingDir)
+	}
 
 	if setCurrentIfFirst {
 		if cur, _ := Current(); cur == "" {

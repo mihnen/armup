@@ -3,9 +3,11 @@ package archive
 import (
 	"archive/zip"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 func extractZip(ctx context.Context, src, dst string) error {
@@ -14,6 +16,35 @@ func extractZip(ctx context.Context, src, dst string) error {
 		return err
 	}
 	defer r.Close()
+
+	// Sum uncompressed bytes for the progress denominator. Cheap — header
+	// data is already in memory after OpenReader.
+	var total int64
+	for _, f := range r.File {
+		if !f.FileInfo().IsDir() {
+			total += int64(f.UncompressedSize64)
+		}
+	}
+
+	var done int64
+	var lastTick time.Time
+	printProgress := func(force bool) {
+		if !force && time.Since(lastTick) < 200*time.Millisecond {
+			return
+		}
+		lastTick = time.Now()
+		if total > 0 {
+			fmt.Fprintf(os.Stderr, "\r  extracting %.1f%%  %s / %s",
+				float64(done)/float64(total)*100,
+				humanBytes(done), humanBytes(total))
+		} else {
+			fmt.Fprintf(os.Stderr, "\r  extracting %s", humanBytes(done))
+		}
+	}
+	defer func() {
+		printProgress(true)
+		fmt.Fprintln(os.Stderr)
+	}()
 
 	for _, f := range r.File {
 		if err := ctx.Err(); err != nil {
@@ -47,6 +78,8 @@ func extractZip(ctx context.Context, src, dst string) error {
 			if err := os.Symlink(string(b), target); err != nil {
 				return err
 			}
+			done += int64(len(b))
+			printProgress(false)
 			continue
 		}
 		rc, err := f.Open()
@@ -58,10 +91,27 @@ func extractZip(ctx context.Context, src, dst string) error {
 			rc.Close()
 			return err
 		}
-		if _, err := io.Copy(out, rc); err != nil {
-			rc.Close()
-			out.Close()
-			return err
+		// Copy in 64 KiB chunks so a large file doesn't stall progress.
+		buf := make([]byte, 64*1024)
+		for {
+			n, rerr := rc.Read(buf)
+			if n > 0 {
+				if _, werr := out.Write(buf[:n]); werr != nil {
+					rc.Close()
+					out.Close()
+					return werr
+				}
+				done += int64(n)
+				printProgress(false)
+			}
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				rc.Close()
+				out.Close()
+				return rerr
+			}
 		}
 		rc.Close()
 		if err := out.Close(); err != nil {
