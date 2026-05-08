@@ -20,7 +20,7 @@ Register-ArgumentCompleter -Native -CommandName armup -ScriptBlock {
                 $candidates = & armup __complete versions-available 2>$null
             }
             'completion' {
-                $candidates = @('bash', 'zsh', 'powershell')
+                $candidates = @('bash', 'zsh', 'fish', 'powershell')
             }
             default {
                 return

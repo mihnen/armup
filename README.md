@@ -123,7 +123,7 @@ armup pinned                     print the project-pinned version (or 'none')
 armup which                      print the active toolchain's bin directory
 armup uninstall <version> [-f]   remove a version (-f to remove the active one)
 armup reset [-f] [--keep-shell]  remove all versions and armup data
-armup completion <shell>         print a shell-completion script (bash, zsh, powershell)
+armup completion <shell>         print a shell-completion script (bash, zsh, fish, powershell)
 armup self-update [--nightly]    replace the running binary with the latest release (or nightly build)
 armup version                    print armup's version
 ```
@@ -217,6 +217,15 @@ echo 'source <(armup completion zsh)' >> ~/.zshrc
 ```sh
 echo 'source <(armup completion bash)' >> ~/.bashrc
 ```
+
+### fish
+
+```sh
+armup completion fish > ~/.config/fish/completions/armup.fish
+```
+
+(fish auto-loads completions from that directory on startup. No
+sourcing or fpath setup required.)
 
 ### PowerShell
 

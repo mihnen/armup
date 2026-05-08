@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Fish shell support. `armup init` writes a `set -gx PATH ...` block to
+  `~/.config/fish/config.fish` (in addition to .zshrc/.bashrc) when fish
+  is installed. `armup reset` strips it. `armup completion fish` emits a
+  fish completion script — drop it into `~/.config/fish/completions/`
+  for fish to auto-load.
 - Nightly rolling pre-release. Every push to master rebuilds all
   five platform archives and force-replaces the `nightly` tagged
   release. Asset URLs are stable; binaries embed `nightly+<sha>`

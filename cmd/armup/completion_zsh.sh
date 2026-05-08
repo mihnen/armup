@@ -21,7 +21,7 @@ _armup() {
       compadd -a candidates
       ;;
     completion)
-      compadd bash zsh powershell
+      compadd bash zsh fish powershell
       ;;
   esac
 }

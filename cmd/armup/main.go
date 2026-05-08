@@ -35,6 +35,9 @@ var zshCompletion string
 //go:embed completion_powershell.ps1
 var powershellCompletion string
 
+//go:embed completion_fish.fish
+var fishCompletion string
+
 const usage = `armup - manage arm-none-eabi GCC toolchain versions
 
 usage: armup <command> [options]
@@ -50,7 +53,7 @@ commands:
   uninstall <version> [-f]   Remove a version (-f to remove the active one)
   reset [-f] [--keep-shell]  Remove every installed version and armup data
   which                      Print the active toolchain's bin directory
-  completion <shell>         Print a shell-completion script (bash, zsh, powershell)
+  completion <shell>         Print a shell-completion script (bash, zsh, fish, powershell)
   self-update [--nightly]    Replace the running binary with the latest release (or nightly)
   version                    Print armup's version
   help                       Show this help
@@ -592,7 +595,7 @@ Refuses to run on local dev builds (rebuild from source instead).`)
 }
 
 func cmdCompletion(args []string) error {
-	fs := newFlagSet("completion", "completion <bash|zsh|powershell>",
+	fs := newFlagSet("completion", "completion <bash|zsh|fish|powershell>",
 		`Print a shell-completion script. Source the output in your
 shell to enable tab-completion of subcommands and version
 arguments. See README's "Shell completion" section for the
@@ -607,10 +610,12 @@ recommended install pattern per shell.`)
 		fmt.Print(bashCompletion)
 	case "zsh":
 		fmt.Print(zshCompletion)
+	case "fish":
+		fmt.Print(fishCompletion)
 	case "powershell", "pwsh":
 		fmt.Print(powershellCompletion)
 	default:
-		return fmt.Errorf("unsupported shell %q (supported: bash, zsh, powershell)", fs.Arg(0))
+		return fmt.Errorf("unsupported shell %q (supported: bash, zsh, fish, powershell)", fs.Arg(0))
 	}
 	return nil
 }
