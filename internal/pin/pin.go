@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	envVar          = "ARMUP_VERSION"
-	envSource       = "ARMUP_VERSION env var"
-	toolVersionsFn  = ".tool-versions"
-	armupVersionFn  = ".armup-version"
-	toolKey         = "armup"
+	envVar         = "ARMUP_VERSION"
+	envSource      = "ARMUP_VERSION env var"
+	toolVersionsFn = ".tool-versions"
+	armupVersionFn = ".armup-version"
+	toolKey        = "armup"
 )
 
 // Result is the outcome of a pin resolution.
