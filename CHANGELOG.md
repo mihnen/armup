@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-05-08
+
 ### Added
 
 - Fish shell support. `armup init` writes a `set -gx PATH ...` block to
@@ -14,14 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is installed. `armup reset` strips it. `armup completion fish` emits a
   fish completion script — drop it into `~/.config/fish/completions/`
   for fish to auto-load.
-- Nightly rolling pre-release. Every push to master rebuilds all
-  five platform archives and force-replaces the `nightly` tagged
-  release. Asset URLs are stable; binaries embed `nightly+<sha>`
-  for traceability. Workflow: `.github/workflows/nightly.yml`.
-- `armup self-update --nightly` opts into the rolling build.
-  Plain `armup self-update` continues to follow only semver-tagged
-  stable releases — the `nightly` tag is filtered out so users
-  can't accidentally jump channels.
 - Per-project version pinning. Drop a `.tool-versions` (asdf/mise
   format) or `.armup-version` file at the project root and armup
   walks up from the current directory to find it.
@@ -30,8 +24,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what the project asks for; `current` is what's globally active.
 - `armup install` and `armup use` with no version argument resolve to
   the project pin. With no pin, they error clearly.
-- `ARMUP_VERSION` env var overrides the file lookup, for one-shot
+- `ARMUP_VERSION` env var overrides the pin-file lookup, for one-shot
   scripting.
+- Nightly rolling pre-release. Every push to master rebuilds all five
+  platform archives and force-replaces a tag named `nightly`. Asset
+  URLs are stable; binaries embed `nightly+<sha>` for traceability.
+- `armup self-update --nightly` opts into the rolling build. Plain
+  `armup self-update` continues to follow only semver-tagged stable
+  releases — the `nightly` tag is filtered out so users can't
+  accidentally jump channels.
+- pre-commit config (`.pre-commit-config.yaml`) using TekWizely's Go
+  hooks for cross-platform local enforcement of gofmt and go vet,
+  with golangci-lint deferred to the pre-push stage.
+- `CONTRIBUTING.md` documenting the contribution flow.
+
+### Changed
+
+- `armup install <version>` is now idempotent — re-running on an
+  already-installed version is a no-op success rather than an error.
+  Important for the per-project pin workflow where the same install
+  command may run repeatedly.
+- Install errors are friendlier on unix too: `Host.ResolveForVersion`
+  probes the archive URL up front, so bad versions / unsupported
+  triple combinations fail with a clear "ARM does not publish a
+  &lt;triple&gt; build for &lt;version&gt;" message instead of dying
+  later on a confusing checksum 404.
 
 ## [1.0.0] — 2026-05-07
 
