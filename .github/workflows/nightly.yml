@@ -1,0 +1,126 @@
+name: nightly
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A rolling pre-release tagged `nightly` that gets force-replaced on every
+# push to master. Distinct from the tagged-semver releases produced by
+# release.yml — those keep history; this one always reflects HEAD.
+#
+# Asset URLs are stable, e.g.:
+#   https://github.com/mihnen/armup/releases/download/nightly/armup-nightly-linux-amd64.tar.gz
+#
+# The embedded version is `nightly+<short-sha>` so `armup version` is
+# traceable to the commit that built the binary.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64, archive: tar.gz, ext: ''     }
+          - { goos: linux,   goarch: arm64, archive: tar.gz, ext: ''     }
+          - { goos: darwin,  goarch: amd64, archive: tar.gz, ext: ''     }
+          - { goos: darwin,  goarch: arm64, archive: tar.gz, ext: ''     }
+          - { goos: windows, goarch: amd64, archive: zip,    ext: '.exe' }
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          EXT: ${{ matrix.ext }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          short=$(git rev-parse --short HEAD)
+          version="nightly+${short}"
+          name="armup-nightly-${GOOS}-${GOARCH}"
+          mkdir -p "dist/${name}"
+          go build -trimpath -ldflags="-s -w -X main.version=${version}" \
+            -o "dist/${name}/armup${EXT}" ./cmd/armup
+          cp LICENSE README.md "dist/${name}/"
+          case "$ARCHIVE" in
+            tar.gz)
+              tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+              ;;
+            zip)
+              (cd dist && zip -qr "${name}.zip" "${name}")
+              ;;
+          esac
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: armup-nightly-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # need git history for release notes
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: sha256sum armup-nightly-*.tar.gz armup-nightly-*.zip > SHA256SUMS
+
+      - name: Build release notes
+        id: notes
+        run: |
+          short=$(git rev-parse --short HEAD)
+          subject=$(git log -1 --pretty=%s)
+          {
+            echo "body<<NIGHTLY_NOTES_EOF"
+            echo "Latest master build."
+            echo
+            echo "**Commit:** [\`$short\`](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}) — $subject"
+            echo
+            echo "Rebuilt on every push to \`master\`. For stable releases see the [Releases page](../../releases?q=v\\&expanded=true)."
+            echo
+            echo "Use 'armup self-update --nightly' to upgrade an installed armup to this build."
+            echo "NIGHTLY_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Replace nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ steps.notes.outputs.body }}
+        run: |
+          set -euo pipefail
+          # Fully replace the nightly release: delete (with its tag), then
+          # recreate at HEAD. Cleaner than asset-replacement quirks.
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release delete nightly --yes --cleanup-tag
+          fi
+          gh release create nightly \
+            --prerelease \
+            --title "Latest master build" \
+            --notes "$BODY" \
+            --target "$GITHUB_SHA" \
+            dist/armup-nightly-*.tar.gz \
+            dist/armup-nightly-*.zip \
+            dist/SHA256SUMS

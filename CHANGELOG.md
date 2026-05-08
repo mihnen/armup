@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Nightly rolling pre-release. Every push to master rebuilds all
+  five platform archives and force-replaces the `nightly` tagged
+  release. Asset URLs are stable; binaries embed `nightly+<sha>`
+  for traceability. Workflow: `.github/workflows/nightly.yml`.
+- `armup self-update --nightly` opts into the rolling build.
+  Plain `armup self-update` continues to follow only semver-tagged
+  stable releases — the `nightly` tag is filtered out so users
+  can't accidentally jump channels.
 - Per-project version pinning. Drop a `.tool-versions` (asdf/mise
   format) or `.armup-version` file at the project root and armup
   walks up from the current directory to find it.

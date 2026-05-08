@@ -31,54 +31,72 @@ func TestPlatformArchive(t *testing.T) {
 	}
 }
 
-func TestParseFirstTag(t *testing.T) {
+func TestParseFirstStableTag(t *testing.T) {
 	body := []byte(`[
 		{"tag_name":"v0.2.0-beta2","draft":false,"prerelease":true},
 		{"tag_name":"v0.2.0-beta1","draft":false,"prerelease":true},
 		{"tag_name":"v0.1.0-beta1","draft":false,"prerelease":true}
 	]`)
-	got, err := parseFirstTag(body)
+	got, err := parseFirstStableTag(body)
 	if err != nil {
-		t.Fatalf("parseFirstTag: %v", err)
+		t.Fatalf("parseFirstStableTag: %v", err)
 	}
 	if got != "v0.2.0-beta2" {
-		t.Errorf("parseFirstTag = %q, want v0.2.0-beta2", got)
+		t.Errorf("parseFirstStableTag = %q, want v0.2.0-beta2", got)
 	}
 }
 
-func TestParseFirstTagSkipsDrafts(t *testing.T) {
+func TestParseFirstStableTagSkipsDrafts(t *testing.T) {
 	body := []byte(`[
 		{"tag_name":"v1.0.0-draft","draft":true},
 		{"tag_name":"v0.9.0","draft":false}
 	]`)
-	got, err := parseFirstTag(body)
+	got, err := parseFirstStableTag(body)
 	if err != nil {
-		t.Fatalf("parseFirstTag: %v", err)
+		t.Fatalf("parseFirstStableTag: %v", err)
 	}
 	if got != "v0.9.0" {
-		t.Errorf("parseFirstTag = %q, want v0.9.0 (drafts skipped)", got)
+		t.Errorf("parseFirstStableTag = %q, want v0.9.0 (drafts skipped)", got)
 	}
 }
 
-func TestParseFirstTagEmpty(t *testing.T) {
-	if _, err := parseFirstTag([]byte(`[]`)); err == nil {
-		t.Error("parseFirstTag on empty list should error")
+func TestParseFirstStableTagEmpty(t *testing.T) {
+	if _, err := parseFirstStableTag([]byte(`[]`)); err == nil {
+		t.Error("parseFirstStableTag on empty list should error")
 	}
 }
 
-func TestParseFirstTagAllDrafts(t *testing.T) {
+func TestParseFirstStableTagAllDrafts(t *testing.T) {
 	body := []byte(`[
 		{"tag_name":"v1.0.0","draft":true},
 		{"tag_name":"v0.9.0","draft":true}
 	]`)
-	if _, err := parseFirstTag(body); err == nil {
-		t.Error("parseFirstTag with only drafts should error")
+	if _, err := parseFirstStableTag(body); err == nil {
+		t.Error("parseFirstStableTag with only drafts should error")
 	}
 }
 
-func TestParseFirstTagBadJSON(t *testing.T) {
-	if _, err := parseFirstTag([]byte(`not json`)); err == nil {
-		t.Error("parseFirstTag on bad JSON should error")
+func TestParseFirstStableTagBadJSON(t *testing.T) {
+	if _, err := parseFirstStableTag([]byte(`not json`)); err == nil {
+		t.Error("parseFirstStableTag on bad JSON should error")
+	}
+}
+
+// The rolling 'nightly' release sits at the top of /releases (it gets
+// republished on every push to master). parseFirstStableTag must skip it
+// so users on a stable release don't accidentally jump onto the nightly
+// channel via plain `armup self-update`.
+func TestParseFirstStableTagSkipsNightly(t *testing.T) {
+	body := []byte(`[
+		{"tag_name":"nightly","draft":false,"prerelease":true},
+		{"tag_name":"v1.0.0","draft":false,"prerelease":false}
+	]`)
+	got, err := parseFirstStableTag(body)
+	if err != nil {
+		t.Fatalf("parseFirstStableTag: %v", err)
+	}
+	if got != "v1.0.0" {
+		t.Errorf("parseFirstStableTag = %q, want v1.0.0 (nightly should be skipped)", got)
 	}
 }
 

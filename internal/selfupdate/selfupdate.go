@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -34,6 +35,9 @@ import (
 	"github.com/mihnen/armup/internal/archive"
 	"github.com/mihnen/armup/internal/download"
 )
+
+// nightlyTag is the fixed tag name produced by .github/workflows/nightly.yml.
+const nightlyTag = "nightly"
 
 const (
 	owner = "mihnen"
@@ -43,18 +47,29 @@ const (
 // Run replaces the running armup binary with the latest release. Errors
 // out for "dev" builds (rebuild from source instead) and is a no-op when
 // already on the latest release.
-func Run(ctx context.Context, currentVersion string) error {
+//
+// When `nightly` is true, the rolling master-tracking pre-release is
+// fetched instead of the latest semver release. Nightly fetches always
+// proceed (no version-equality short-circuit) since the embedded version
+// includes a commit SHA that's unlikely to match the just-built one.
+func Run(ctx context.Context, currentVersion string, nightly bool) error {
 	if currentVersion == "dev" {
 		return errors.New("self-update is not available on local dev builds; rebuild from source")
 	}
 
-	tag, err := latestTag(ctx)
-	if err != nil {
-		return fmt.Errorf("query releases: %w", err)
-	}
-	if tag == currentVersion {
-		fmt.Printf("armup %s is already the latest release\n", currentVersion)
-		return nil
+	var tag string
+	if nightly {
+		tag = nightlyTag
+	} else {
+		t, err := latestStableTag(ctx)
+		if err != nil {
+			return fmt.Errorf("query releases: %w", err)
+		}
+		tag = t
+		if tag == currentVersion {
+			fmt.Printf("armup %s is already the latest release\n", currentVersion)
+			return nil
+		}
 	}
 	fmt.Printf("Current: %s\nLatest:  %s\n", currentVersion, tag)
 
@@ -124,10 +139,11 @@ func platformArchive(tag string) (archiveName, ext, binName string) {
 	return
 }
 
-// latestTag returns the tag of the most recent published release, including
-// prereleases. Uses /releases (not /releases/latest) because /latest filters
-// out prereleases and 404s if no stable release exists.
-func latestTag(ctx context.Context) (string, error) {
+// latestStableTag returns the tag of the most recent published *semver*
+// release. Uses /releases (not /releases/latest) so prereleases like
+// v1.0.0-beta1 still count. Filters out non-semver tags so the rolling
+// `nightly` release doesn't accidentally show up as "latest".
+func latestStableTag(ctx context.Context) (string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", owner, repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -149,10 +165,15 @@ func latestTag(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return parseFirstTag(body)
+	return parseFirstStableTag(body)
 }
 
-func parseFirstTag(body []byte) (string, error) {
+// semverTagRE matches v0.1.0, v1.2.3, v1.2.3-rc1, v1.0.0-beta.2 — the
+// shape produced by release.yml's tag filter. Anything else (e.g.
+// `nightly`) is skipped.
+var semverTagRE = regexp.MustCompile(`^v\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$`)
+
+func parseFirstStableTag(body []byte) (string, error) {
 	type release struct {
 		TagName string `json:"tag_name"`
 		Draft   bool   `json:"draft"`
@@ -165,11 +186,12 @@ func parseFirstTag(body []byte) (string, error) {
 		if r.Draft {
 			continue
 		}
-		if r.TagName != "" {
-			return r.TagName, nil
+		if !semverTagRE.MatchString(r.TagName) {
+			continue
 		}
+		return r.TagName, nil
 	}
-	return "", errors.New("no published releases found")
+	return "", errors.New("no published stable releases found")
 }
 
 // fetchExpectedSum downloads the SHA256SUMS file and returns the hex digest

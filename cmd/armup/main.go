@@ -51,7 +51,7 @@ commands:
   reset [-f] [--keep-shell]  Remove every installed version and armup data
   which                      Print the active toolchain's bin directory
   completion <shell>         Print a shell-completion script (bash, zsh, powershell)
-  self-update                Replace the running binary with the latest release
+  self-update [--nightly]    Replace the running binary with the latest release (or nightly)
   version                    Print armup's version
   help                       Show this help
 
@@ -103,7 +103,7 @@ func run() int {
 	case "completion":
 		err = cmdCompletion(args)
 	case "self-update":
-		err = selfupdate.Run(ctx, version)
+		err = cmdSelfUpdate(ctx, args)
 	case "__complete":
 		err = cmdCompleteHidden(args)
 	case "version", "--version", "-v":
@@ -574,6 +574,21 @@ remove the armup binary itself.`)
 		fmt.Println("    rm ~/.local/bin/armup")
 	}
 	return nil
+}
+
+func cmdSelfUpdate(ctx context.Context, args []string) error {
+	fs := newFlagSet("self-update", "self-update [--nightly]",
+		`Replace the running armup binary with the latest release for the
+current platform. SHA-256 verified.
+
+By default, fetches the latest stable (semver-tagged) release.
+With --nightly, fetches the rolling master build from the
+'nightly' release.
+
+Refuses to run on local dev builds (rebuild from source instead).`)
+	nightly := fs.Bool("nightly", false, "fetch the rolling master build instead of the latest stable")
+	fs.Parse(args)
+	return selfupdate.Run(ctx, version, *nightly)
 }
 
 func cmdCompletion(args []string) error {

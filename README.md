@@ -124,7 +124,7 @@ armup which                      print the active toolchain's bin directory
 armup uninstall <version> [-f]   remove a version (-f to remove the active one)
 armup reset [-f] [--keep-shell]  remove all versions and armup data
 armup completion <shell>         print a shell-completion script (bash, zsh, powershell)
-armup self-update                replace the running binary with the latest release
+armup self-update [--nightly]    replace the running binary with the latest release (or nightly build)
 armup version                    print armup's version
 ```
 
@@ -132,6 +132,24 @@ Run `armup <command> -h` for command-specific help.
 
 `armup list`, `armup available`, `armup current`, `armup pinned`, and
 `armup which` all accept `--json` for scripting.
+
+## Nightly builds
+
+Every push to `master` produces a rolling pre-release at
+[releases/tag/nightly](../../releases/tag/nightly). The assets there have
+stable URLs (e.g.
+`releases/download/nightly/armup-nightly-linux-amd64.tar.gz`) and the
+binary's embedded version reports `nightly+<short-sha>` so it's traceable
+to the commit that built it.
+
+To opt into nightly:
+
+```sh
+armup self-update --nightly
+```
+
+Plain `armup self-update` keeps tracking semver-tagged releases — the
+nightly tag is filtered out.
 
 ## Per-project pinning
 
