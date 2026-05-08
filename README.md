@@ -249,6 +249,11 @@ Windows installs are zip archives, extracted via the Go standard library.
 
 `ARMTOOLCHAIN_PURE_GO=1` forces the pure-Go fallback (useful for testing).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, pre-commit hooks, and
+the test/lint expectations.
+
 ## License
 
 [MIT](LICENSE).

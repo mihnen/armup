@@ -1,0 +1,33 @@
+# pre-commit hooks (https://pre-commit.com/)
+#
+# One-time setup (or run `make hooks`):
+#   pre-commit install
+#   pre-commit install --hook-type pre-push
+#
+# Run all hooks against every file (handy after pulling a big change):
+#   pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=2048']
+      - id: check-executables-have-shebangs
+
+  # Go-specific hooks. TekWizely's collection is cross-platform (no bash
+  # assumption) and well-maintained. Keep `commit` hooks fast; the slower
+  # golangci-lint runs on `pre-push` so commits stay snappy.
+  - repo: https://github.com/TekWizely/pre-commit-golang
+    rev: v1.0.0-rc.4
+    hooks:
+      - id: go-fmt-repo
+        # gofmt across the repo; fails on any unformatted file.
+      - id: go-vet-repo-mod
+        # go vet ./... at the module root.
+      - id: golangci-lint-repo-mod
+        stages: [pre-push]
