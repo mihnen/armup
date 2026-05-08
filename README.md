@@ -119,6 +119,7 @@ armup install <version>          download, verify, and extract a version
 armup list                       list installed versions; * marks active
 armup use <version>              switch the active version
 armup current                    print the active version
+armup pinned                     print the project-pinned version (or 'none')
 armup which                      print the active toolchain's bin directory
 armup uninstall <version> [-f]   remove a version (-f to remove the active one)
 armup reset [-f] [--keep-shell]  remove all versions and armup data
@@ -129,8 +130,40 @@ armup version                    print armup's version
 
 Run `armup <command> -h` for command-specific help.
 
-`armup list`, `armup available`, `armup current`, and `armup which` all
-accept `--json` for scripting.
+`armup list`, `armup available`, `armup current`, `armup pinned`, and
+`armup which` all accept `--json` for scripting.
+
+## Per-project pinning
+
+Drop a `.tool-versions` file (asdf/mise format) at your project root:
+
+```
+armup 14.3.rel1
+```
+
+Or a single-line `.armup-version`:
+
+```
+14.3.rel1
+```
+
+Then anywhere inside the project tree:
+
+```sh
+armup pinned          # 14.3.rel1 (from /path/to/project/.tool-versions)
+armup install         # installs the pinned version
+armup use             # switches the active version to the pinned one
+```
+
+The `ARMUP_VERSION` environment variable overrides the file lookup:
+
+```sh
+ARMUP_VERSION=15.2.rel1 armup install   # one-shot install of 15.2.rel1
+```
+
+`armup current` and `armup which` always report the **globally active**
+version — pinning doesn't change them on its own. They diverge from
+`armup pinned` until you run `armup use` (no args) to apply the pin.
 
 `use` updates a single link; the switch is visible immediately in any shell
 whose PATH includes the toolchain directory.

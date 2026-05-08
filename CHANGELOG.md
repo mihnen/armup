@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per-project version pinning. Drop a `.tool-versions` (asdf/mise
+  format) or `.armup-version` file at the project root and armup
+  walks up from the current directory to find it.
+- `armup pinned` shows the resolved pin (version + source path), with
+  `--json` for scripting. Distinct from `armup current` — `pinned` is
+  what the project asks for; `current` is what's globally active.
+- `armup install` and `armup use` with no version argument resolve to
+  the project pin. With no pin, they error clearly.
+- `ARMUP_VERSION` env var overrides the file lookup, for one-shot
+  scripting.
+
 ## [1.0.0] — 2026-05-07
 
 First stable release. Linux, macOS, and Windows are all supported with

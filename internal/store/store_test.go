@@ -233,6 +233,23 @@ func TestUninstallNonActive(t *testing.T) {
 	}
 }
 
+// TestInstallIdempotent: re-running Install on an already-installed
+// version is a no-op success, not an error. (Crucial for the per-project
+// pin workflow where `armup install` may run repeatedly.)
+func TestInstallIdempotent(t *testing.T) {
+	withTempDataDir(t)
+	if err := EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, paths.VersionDir("14.3.rel1"))
+
+	// No network access required: Install must short-circuit when verDir
+	// already exists.
+	if err := Install(t.Context(), "14.3.rel1", true); err != nil {
+		t.Fatalf("Install on already-installed version errored: %v", err)
+	}
+}
+
 // TestReset wipes everything armup created under DataDir. With multiple
 // versions installed and `current` linked, after Reset the data dir is gone.
 func TestReset(t *testing.T) {

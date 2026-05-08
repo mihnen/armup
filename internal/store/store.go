@@ -145,7 +145,10 @@ func Install(ctx context.Context, version string, setCurrentIfFirst bool) error 
 
 	verDir := paths.VersionDir(version)
 	if _, err := os.Stat(verDir); err == nil {
-		return fmt.Errorf("version %s is already installed at %s", version, verDir)
+		// Idempotent: re-running install on an installed version is not
+		// an error. Skip the network round-trip and report the no-op.
+		fmt.Printf("Version %s is already installed at %s\n", version, verDir)
+		return nil
 	}
 
 	host, err = host.ResolveForVersion(ctx, version)

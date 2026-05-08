@@ -16,6 +16,7 @@ import (
 
 	"github.com/mihnen/armup/internal/arm"
 	"github.com/mihnen/armup/internal/paths"
+	"github.com/mihnen/armup/internal/pin"
 	"github.com/mihnen/armup/internal/selfupdate"
 	"github.com/mihnen/armup/internal/shell"
 	"github.com/mihnen/armup/internal/store"
@@ -45,6 +46,7 @@ commands:
   install <version>          Download, verify, and extract a version
   use <version>              Switch the active version
   current                    Print the active version
+  pinned                     Print the per-project pinned version (if any)
   uninstall <version> [-f]   Remove a version (-f to remove the active one)
   reset [-f] [--keep-shell]  Remove every installed version and armup data
   which                      Print the active toolchain's bin directory
@@ -90,6 +92,8 @@ func run() int {
 		err = cmdUse(args)
 	case "current":
 		err = cmdCurrent(args)
+	case "pinned":
+		err = cmdPinned(args)
 	case "uninstall", "remove", "rm":
 		err = cmdUninstall(args)
 	case "reset":
@@ -302,36 +306,136 @@ absolute path and active-status flag.`)
 }
 
 func cmdInstall(ctx context.Context, args []string) error {
-	fs := newFlagSet("install", "install <version>",
+	fs := newFlagSet("install", "install [<version>]",
 		`Download, verify, and extract a version of the arm-none-eabi
 toolchain. Run 'armup available' for a list of versions.
+
+With no <version> argument, install the version pinned in the
+current project (.tool-versions or .armup-version) — see
+'armup pinned'.
 
 If no version is currently active, the newly-installed one becomes
 the active version.`)
 	fs.Parse(args)
-	if fs.NArg() != 1 {
+
+	var version string
+	switch fs.NArg() {
+	case 0:
+		v, err := pinnedOrError("install")
+		if err != nil {
+			return err
+		}
+		version = v
+	case 1:
+		version = arm.Normalize(fs.Arg(0))
+	default:
 		fs.Usage()
-		return errors.New("missing <version> argument")
+		return errors.New("too many arguments")
 	}
-	return store.Install(ctx, arm.Normalize(fs.Arg(0)), true)
+	return store.Install(ctx, version, true)
 }
 
 func cmdUse(args []string) error {
-	fs := newFlagSet("use", "use <version>",
+	fs := newFlagSet("use", "use [<version>]",
 		`Switch the active toolchain to <version>. Takes effect
 immediately in any shell whose PATH includes armup's bin
 directory — no shell reload needed, since PATH lookups follow
-the symlink/junction.`)
+the symlink/junction.
+
+With no <version> argument, switch to the version pinned in the
+current project (.tool-versions or .armup-version) — see
+'armup pinned'.`)
 	fs.Parse(args)
-	if fs.NArg() != 1 {
+
+	var v string
+	switch fs.NArg() {
+	case 0:
+		got, err := pinnedOrError("use")
+		if err != nil {
+			return err
+		}
+		v = got
+	case 1:
+		v = arm.Normalize(fs.Arg(0))
+	default:
 		fs.Usage()
-		return errors.New("missing <version> argument")
+		return errors.New("too many arguments")
 	}
-	v := arm.Normalize(fs.Arg(0))
 	if err := store.Use(v); err != nil {
 		return err
 	}
 	fmt.Printf("Now using %s\n", v)
+	return nil
+}
+
+// pinnedOrError reads the per-project pin and returns the version, or a
+// clear error explaining what `cmd` expected. Used by install/use to back
+// the no-arg form.
+func pinnedOrError(cmd string) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	r, err := pin.Resolve(cwd)
+	if err != nil {
+		return "", fmt.Errorf("read project pin: %w", err)
+	}
+	if !r.Found() {
+		return "", fmt.Errorf("no version pinned in this project; pass an explicit version (`armup %s <version>`) or create a .tool-versions / .armup-version file", cmd)
+	}
+	fmt.Fprintf(os.Stderr, "Resolved pinned version %s from %s\n", r.Version, r.Source)
+	return r.Version, nil
+}
+
+// cmdPinned shows what's pinned for the current project (or none). It
+// deliberately does NOT report the globally-active version — `armup
+// current` is for that. The two answers can differ; conflating them
+// confuses users.
+func cmdPinned(args []string) error {
+	fs := newFlagSet("pinned", "pinned [--json]",
+		`Print the per-project pinned version, resolved by walking up
+from the current directory looking for a .tool-versions or
+.armup-version file. ARMUP_VERSION env var overrides the file
+walk.
+
+Distinct from 'armup current' — pinned is what the project asks
+for, current is what's globally active. They may differ; pinned
+does not change the active version on its own. See 'armup use'
+(no args) to switch to the pinned version.
+
+With --json, output {"version": "...", "source": "..."} or
+{"version": null, "source": null} when nothing is pinned.`)
+	asJSON := fs.Bool("json", false, "output as JSON")
+	fs.Parse(args)
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	r, err := pin.Resolve(cwd)
+	if err != nil {
+		return err
+	}
+
+	if *asJSON {
+		type out struct {
+			Version *string `json:"version"`
+			Source  *string `json:"source"`
+		}
+		var v out
+		if r.Found() {
+			vs, src := r.Version, r.Source
+			v.Version = &vs
+			v.Source = &src
+		}
+		return writeJSON(v)
+	}
+
+	if !r.Found() {
+		fmt.Println("none")
+		return nil
+	}
+	fmt.Printf("%s (from %s)\n", r.Version, r.Source)
 	return nil
 }
 
@@ -508,8 +612,8 @@ func cmdCompleteHidden(args []string) error {
 	case "subcommands":
 		for _, c := range []string{
 			"init", "available", "list", "install", "use", "current",
-			"uninstall", "reset", "which", "completion", "self-update",
-			"version", "help",
+			"pinned", "uninstall", "reset", "which", "completion",
+			"self-update", "version", "help",
 		} {
 			fmt.Println(c)
 		}

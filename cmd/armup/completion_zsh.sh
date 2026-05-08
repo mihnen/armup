@@ -15,6 +15,8 @@ _armup() {
       compadd -a candidates
       ;;
     install)
+      # install also accepts no version (uses the project pin), so
+      # offering the available list as candidates is purely additive.
       candidates=(${(f)"$(command armup __complete versions-available 2>/dev/null)"})
       compadd -a candidates
       ;;
