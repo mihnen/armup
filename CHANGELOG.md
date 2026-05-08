@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `armup which <version>` and `armup which --pinned` print the bin
+  directory of a specific or pinned version without touching the
+  global active version. Designed for direnv / per-shell PATH
+  isolation: `PATH_add "$(armup which --pinned)"` in a .envrc lets
+  each shell pin its own toolchain independently of other open
+  shells.
+
 ## [1.1.0] — 2026-05-08
 
 ### Added

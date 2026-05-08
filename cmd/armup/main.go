@@ -499,19 +499,84 @@ currently active version unless -f / --force is passed.`)
 }
 
 func cmdWhich(args []string) error {
-	fs := newFlagSet("which", "which [--json]",
-		`Print the absolute path of the active toolchain's bin/ directory.
-This is the directory armup adds to your PATH at init.
+	fs := newFlagSet("which", "which [<version>] [--pinned] [--json]",
+		`Print the absolute path of a toolchain's bin/ directory.
 
-With --json, output {"path": "..."}.`)
+  With no argument, prints the active toolchain — the directory
+  armup adds to your PATH at init. Follows the global 'current'
+  symlink, so 'armup use' affects this output.
+
+  With <version>, prints that specific installed version's bin
+  dir without touching the global active version. Useful for
+  direnv .envrc files that want per-shell PATH:
+
+      PATH_add "$(armup which 14.3.rel1)"
+
+  With --pinned, prints the bin dir of the project-pinned version
+  (.tool-versions / .armup-version walked up from cwd, or the
+  ARMUP_VERSION env var). Errors if no pin is found or the
+  pinned version isn't installed.
+
+  --json wraps the output as {"path": "..."}.`)
 	asJSON := fs.Bool("json", false, "output as JSON")
+	pinnedFlag := fs.Bool("pinned", false, "print the bin dir of the project-pinned version")
 	fs.Parse(args)
+
+	var binDir string
+	switch {
+	case *pinnedFlag:
+		if fs.NArg() > 0 {
+			fs.Usage()
+			return errors.New("--pinned cannot be combined with a <version> argument")
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		r, err := pin.Resolve(cwd)
+		if err != nil {
+			return err
+		}
+		if !r.Found() {
+			return errors.New("no version pinned in this project (no .tool-versions / .armup-version file and ARMUP_VERSION unset)")
+		}
+		if err := requireInstalled(r.Version); err != nil {
+			return err
+		}
+		binDir = paths.VersionBinDir(r.Version)
+	case fs.NArg() == 1:
+		v := arm.Normalize(fs.Arg(0))
+		if err := requireInstalled(v); err != nil {
+			return err
+		}
+		binDir = paths.VersionBinDir(v)
+	case fs.NArg() == 0:
+		binDir = paths.ActiveBinDir()
+	default:
+		fs.Usage()
+		return errors.New("too many arguments")
+	}
+
 	if *asJSON {
 		return writeJSON(struct {
 			Path string `json:"path"`
-		}{paths.ActiveBinDir()})
+		}{binDir})
 	}
-	fmt.Println(paths.ActiveBinDir())
+	fmt.Println(binDir)
+	return nil
+}
+
+// requireInstalled errors if `version` doesn't have a directory under
+// versions/. We only stat it here — for ergonomics, not security; the
+// caller is constructing a path string that's only useful if the dir
+// exists.
+func requireInstalled(version string) error {
+	if _, err := os.Stat(paths.VersionDir(version)); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("version %s is not installed (run: armup install %s)", version, version)
+		}
+		return err
+	}
 	return nil
 }
 

@@ -121,6 +121,8 @@ armup use <version>              switch the active version
 armup current                    print the active version
 armup pinned                     print the project-pinned version (or 'none')
 armup which                      print the active toolchain's bin directory
+armup which <version>            print a specific installed version's bin directory
+armup which --pinned             print the project-pinned version's bin directory
 armup uninstall <version> [-f]   remove a version (-f to remove the active one)
 armup reset [-f] [--keep-shell]  remove all versions and armup data
 armup completion <shell>         print a shell-completion script (bash, zsh, fish, powershell)
@@ -179,9 +181,32 @@ The `ARMUP_VERSION` environment variable overrides the file lookup:
 ARMUP_VERSION=15.2.rel1 armup install   # one-shot install of 15.2.rel1
 ```
 
-`armup current` and `armup which` always report the **globally active**
-version — pinning doesn't change them on its own. They diverge from
-`armup pinned` until you run `armup use` (no args) to apply the pin.
+`armup current` and `armup which` (with no arguments) always report the
+**globally active** version — pinning doesn't change them on its own.
+They diverge from `armup pinned` until you run `armup use` (no args)
+to apply the pin.
+
+### Per-shell PATH with direnv
+
+`armup use` is global: it retargets a shared symlink, so every shell
+sees the change. If you want each shell's toolchain to follow the
+project it `cd`'d into — independently of other open shells —
+combine `armup which --pinned` with [direnv](https://direnv.net):
+
+```bash
+# .envrc at the project root
+PATH_add "$(armup which --pinned)"
+```
+
+This sets `PATH` per shell without touching the global `current`
+symlink. Two shells in two different projects can run different
+toolchain versions simultaneously.
+
+For a specific version (no project pin file needed):
+
+```bash
+PATH_add "$(armup which 14.3.rel1)"
+```
 
 `use` updates a single link; the switch is visible immediately in any shell
 whose PATH includes the toolchain directory.

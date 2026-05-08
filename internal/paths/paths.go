@@ -12,3 +12,6 @@ func ActiveBinDir() string  { return filepath.Join(CurrentLink(), "bin") }
 func VersionDir(version string) string {
 	return filepath.Join(VersionsDir(), version)
 }
+func VersionBinDir(version string) string {
+	return filepath.Join(VersionDir(version), "bin")
+}
