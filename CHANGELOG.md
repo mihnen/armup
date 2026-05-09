@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-05-09
+
 ### Added
 
 - `armup install --from <SRC>` installs a toolchain from any URL or
@@ -32,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the modern expected name, wrapped with any single arbitrary subdir
   (legacy / custom builds), and unwrapped (newer Windows zips). Same
   function, generalized.
+
+### Fixed
+
+- `armup list` no longer surfaces internal `.staging-<name>`
+  directories left over from interrupted installs.
 
 ## [1.2.0] — 2026-05-08
 
