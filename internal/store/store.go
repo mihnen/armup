@@ -98,7 +98,9 @@ func EnsureLayout() error {
 	return nil
 }
 
-// List returns the installed versions, sorted descending.
+// List returns the installed versions, sorted descending. Internal
+// dot-prefixed directories (like `.staging-<name>` left over from an
+// interrupted install) are filtered out.
 func List() ([]string, error) {
 	entries, err := os.ReadDir(paths.VersionsDir())
 	if os.IsNotExist(err) {
@@ -109,9 +111,10 @@ func List() ([]string, error) {
 	}
 	var out []string
 	for _, e := range entries {
-		if e.IsDir() {
-			out = append(out, e.Name())
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
 		}
+		out = append(out, e.Name())
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] > out[j] })
 	return out, nil

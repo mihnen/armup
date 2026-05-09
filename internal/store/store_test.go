@@ -123,6 +123,31 @@ func TestPromoteExtractionUnwrapped(t *testing.T) {
 	mustNotExist(t, staging)
 }
 
+// TestListSkipsHiddenDirs: a leftover `.staging-*` directory (from an
+// install killed mid-extraction or similar) must not appear as an
+// installed version in `armup list`.
+func TestListSkipsHiddenDirs(t *testing.T) {
+	withTempDataDir(t)
+	if err := EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, paths.VersionDir("12.3.rel1"))
+	mustMkdir(t, filepath.Join(paths.VersionsDir(), ".staging-half-extracted"))
+
+	got, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range got {
+		if v == ".staging-half-extracted" || v[0] == '.' {
+			t.Errorf("List included hidden dir: %v", got)
+		}
+	}
+	if len(got) != 1 || got[0] != "12.3.rel1" {
+		t.Errorf("List = %v, want [12.3.rel1]", got)
+	}
+}
+
 // TestListEmpty covers the "fresh install, nothing yet" path.
 func TestListEmpty(t *testing.T) {
 	withTempDataDir(t)
