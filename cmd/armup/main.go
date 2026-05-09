@@ -181,17 +181,38 @@ Windows). Idempotent — safe to re-run.`)
 }
 
 func cmdAvailable(ctx context.Context, args []string) error {
-	fs := newFlagSet("available", "available [--refresh] [--json]",
+	fs := newFlagSet("available", "available [--refresh] [--legacy] [--json]",
 		`List ARM toolchain versions you can install. By default reads
 from the local cache (or the curated list if no cache exists).
 With --refresh, re-queries ARM and falls back to HEAD-probing
 the curated versions if ARM's downloads page is blocked.
 
+With --legacy, list pre-2022 ARM releases (the gnu-rm line) that
+are baked into armup with embedded SHA-256 verification. Filtered
+to those shipped for the running platform.
+
 With --json, output the list as JSON with the source ("cached",
-"curated", or "refresh") for scripting.`)
+"curated", "refresh", or "legacy") for scripting.`)
 	refresh := fs.Bool("refresh", false, "fetch the latest list from ARM")
+	legacy := fs.Bool("legacy", false, "list legacy (pre-2022) ARM releases")
 	asJSON := fs.Bool("json", false, "output as JSON")
 	fs.Parse(args)
+
+	if *legacy {
+		versions := arm.LegacyVersions()
+		if *asJSON {
+			return writeJSON(struct {
+				Source   string   `json:"source"`
+				Versions []string `json:"versions"`
+			}{"legacy", versions})
+		}
+		if len(versions) == 0 {
+			fmt.Fprintln(os.Stderr, "No legacy versions are shipped for this platform.")
+			return nil
+		}
+		printVersions(versions)
+		return nil
+	}
 
 	var versions []string
 	var source string

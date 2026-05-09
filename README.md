@@ -136,6 +136,25 @@ Run `armup <command> -h` for command-specific help.
 `armup list`, `armup available`, `armup current`, `armup pinned`, and
 `armup which` all accept `--json` for scripting.
 
+## Legacy versions
+
+Pre-2022 ARM releases (the `gnu-rm` line) have inconsistent URL
+patterns and don't ship checksum sidecars, so they couldn't be reached
+by the standard `armup install <version>` flow. armup ships a curated
+table of them with embedded SHA-256 verification:
+
+```sh
+armup available --legacy        # list legacy versions for this platform
+armup install 10.3-2021.10      # works just like a modern install
+armup install 9-2019-q4-major
+```
+
+Versions in the legacy table use ARM's filename form (e.g.
+`9-2019-q4-major`, `10.3-2021.10`). Same `armup use`, `armup which`,
+`armup uninstall` apply to them as to modern versions.
+
+To see the table or add a new entry, see `internal/arm/legacy.go`.
+
 ## Custom installs
 
 `armup install --from <SRC>` installs a toolchain from any source you
