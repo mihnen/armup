@@ -115,7 +115,8 @@ GOOS=windows GOARCH=amd64 go build -o armup.exe   ./cmd/armup
 ```
 armup init                       one-time setup (creates data dir, updates PATH)
 armup available [--refresh]      list versions you can install
-armup install <version>          download, verify, and extract a version
+armup install <version>          download from developer.arm.com (modern releases)
+armup install --from <SRC>       install from a custom URL or local archive
 armup list                       list installed versions; * marks active
 armup use <version>              switch the active version
 armup current                    print the active version
@@ -134,6 +135,50 @@ Run `armup <command> -h` for command-specific help.
 
 `armup list`, `armup available`, `armup current`, `armup pinned`, and
 `armup which` all accept `--json` for scripting.
+
+## Custom installs
+
+`armup install --from <SRC>` installs a toolchain from any source you
+hand it. Useful for:
+
+- **Legacy ARM releases** that don't fit the modern URL pattern (the
+  pre-2022 `gnu-rm` line: 9-2019-q4, 10.3-2021.10, etc.).
+- **Internal mirrors** behind a corporate firewall.
+- **Custom GCC builds** with vendor patches.
+
+`<SRC>` can be a remote URL, a `file://` URI, a bare local path, or a
+Windows UNC share. Examples:
+
+```sh
+# Legacy ARM 9-2019-q4 (downloaded from developer.arm.com)
+armup install \
+  --from 'https://developer.arm.com/-/media/files/downloads/gnu-rm/9-2019q4/gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2' \
+  --as 9-2019-q4
+
+# Internal mirror
+armup install --from 'https://mirror.example.com/14.3.rel1.tar.xz' --as 14.3.rel1-mirror
+
+# Local archive (already on disk)
+armup install --from ~/Downloads/gcc-arm-none-eabi-12.3-custom.tar.bz2 --as 12.3-custom
+
+# file:// URI for a network share
+armup install --from 'file:///mnt/share/archives/12.3.rel1.tar.xz' --as 12.3.rel1
+```
+
+Flags:
+
+- `--as <name>` — version slot name. Defaults to the source filename
+  with archive extension stripped. You'll usually want to override it
+  with something short like `9-2019-q4`.
+- `--sha256 <hex>` — verify the archive's SHA-256 before extraction.
+  If absent, a warning prints but the install proceeds. Legacy
+  archives don't ship checksum sidecars, so you'll often skip this.
+
+armup refuses to clobber an existing `versions/<name>` slot — pick a
+different `--as` or `armup uninstall <name>` first.
+
+Supported archive formats: `.tar.gz`, `.tar.xz`, `.tar.bz2`, `.zip`.
+Local archives are read in place — no copy to the cache.
 
 ## Nightly builds
 

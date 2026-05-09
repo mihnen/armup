@@ -47,6 +47,7 @@ commands:
   available [--refresh]      List versions available from ARM (cached or live)
   list                       List installed versions; '*' marks current
   install <version>          Download, verify, and extract a version
+  install --from <SRC>       Install from a custom URL or local archive
   use <version>              Switch the active version
   current                    Print the active version
   pinned                     Print the per-project pinned version (if any)
@@ -309,17 +310,48 @@ absolute path and active-status flag.`)
 }
 
 func cmdInstall(ctx context.Context, args []string) error {
-	fs := newFlagSet("install", "install [<version>]",
-		`Download, verify, and extract a version of the arm-none-eabi
-toolchain. Run 'armup available' for a list of versions.
+	fs := newFlagSet("install", "install [<version>] | install --from <SRC> [--as <name>] [--sha256 <hex>]",
+		`Install a toolchain.
 
-With no <version> argument, install the version pinned in the
-current project (.tool-versions or .armup-version) — see
-'armup pinned'.
+  With <version>: download from developer.arm.com using ARM's
+  standard URL pattern. Run 'armup available' for the list.
 
-If no version is currently active, the newly-installed one becomes
-the active version.`)
+  With no argument: install the version pinned in the current
+  project (.tool-versions or .armup-version). See 'armup pinned'.
+
+  With --from <SRC>: install from an arbitrary source. <SRC> can
+  be an HTTPS URL, a file:// URI, a bare local path, or a Windows
+  UNC share. Useful for legacy ARM versions whose URL doesn't fit
+  the modern pattern, internal mirrors, and custom GCC builds.
+  --as <name> overrides the version slot name (default: derived
+  from the source filename). --sha256 <hex> verifies the archive
+  before extraction (otherwise a warning is printed).
+
+  --from and a positional <version> are mutually exclusive. If no
+  version is currently active, the newly-installed one becomes
+  active in either flow.`)
+	fromFlag := fs.String("from", "", "URL or local path to a toolchain archive")
+	asFlag := fs.String("as", "", "name to install under (defaults to source filename)")
+	sha256Flag := fs.String("sha256", "", "expected hex SHA-256 of the archive")
 	fs.Parse(args)
+
+	if *fromFlag != "" {
+		if fs.NArg() > 0 {
+			fs.Usage()
+			return errors.New("--from cannot be combined with a positional <version> argument")
+		}
+		return store.InstallFromSource(ctx, store.InstallSourceOpts{
+			Source:            *fromFlag,
+			As:                *asFlag,
+			SHA256:            *sha256Flag,
+			SetCurrentIfFirst: true,
+		})
+	}
+
+	if *asFlag != "" || *sha256Flag != "" {
+		fs.Usage()
+		return errors.New("--as and --sha256 only apply with --from")
+	}
 
 	var version string
 	switch fs.NArg() {

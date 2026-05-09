@@ -60,6 +60,48 @@ func TestPromoteExtractionWrapped(t *testing.T) {
 	mustNotExist(t, staging)
 }
 
+// TestPromoteExtractionSingleSubdirArbitraryName covers archives that
+// wrap their contents but use a name we don't know in advance — legacy
+// ARM ships gcc-arm-none-eabi-<ver>/, custom builds may use anything.
+// `innerName` is empty (the InstallFromSource path), so step 1 is
+// skipped and detection lands on step 2.
+func TestPromoteExtractionSingleSubdirArbitraryName(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, ".staging-9-2019-q4")
+	verDir := filepath.Join(root, "9-2019-q4")
+
+	wrapper := filepath.Join(staging, "gcc-arm-none-eabi-9-2019-q4-major")
+	mustMkdir(t, filepath.Join(wrapper, "bin"))
+	mustMkdir(t, filepath.Join(wrapper, "lib"))
+	mustWrite(t, filepath.Join(wrapper, "bin", "arm-none-eabi-gcc"), "binary")
+
+	// innerName="" forces fallthrough to single-subdir detection.
+	if err := promoteExtraction(staging, "", verDir); err != nil {
+		t.Fatalf("promoteExtraction: %v", err)
+	}
+	mustExist(t, filepath.Join(verDir, "bin", "arm-none-eabi-gcc"))
+	mustNotExist(t, staging)
+}
+
+// TestPromoteExtractionSingleSubdirIgnoresExpected: when innerName is
+// passed but the wrapper has a different name, step 1 misses and step 2
+// catches it.
+func TestPromoteExtractionSingleSubdirIgnoresExpected(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, ".staging-x")
+	verDir := filepath.Join(root, "x")
+
+	wrapper := filepath.Join(staging, "actually-named-something-else")
+	mustMkdir(t, filepath.Join(wrapper, "bin"))
+	mustWrite(t, filepath.Join(wrapper, "bin", "arm-none-eabi-gcc"), "binary")
+
+	if err := promoteExtraction(staging, "expected-but-not-here", verDir); err != nil {
+		t.Fatalf("promoteExtraction: %v", err)
+	}
+	mustExist(t, filepath.Join(verDir, "bin", "arm-none-eabi-gcc"))
+	mustNotExist(t, staging)
+}
+
 // TestPromoteExtractionUnwrapped covers ARM's newer Windows zip layout (15.x):
 // no wrapping directory, bin/ and lib/ sit at the top of the archive. The
 // staging dir itself becomes the version slot.
@@ -79,6 +121,31 @@ func TestPromoteExtractionUnwrapped(t *testing.T) {
 	mustExist(t, filepath.Join(verDir, "bin", "arm-none-eabi-gcc.exe"))
 	mustExist(t, filepath.Join(verDir, "arm-none-eabi"))
 	mustNotExist(t, staging)
+}
+
+// TestListSkipsHiddenDirs: a leftover `.staging-*` directory (from an
+// install killed mid-extraction or similar) must not appear as an
+// installed version in `armup list`.
+func TestListSkipsHiddenDirs(t *testing.T) {
+	withTempDataDir(t)
+	if err := EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, paths.VersionDir("12.3.rel1"))
+	mustMkdir(t, filepath.Join(paths.VersionsDir(), ".staging-half-extracted"))
+
+	got, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range got {
+		if v == ".staging-half-extracted" || v[0] == '.' {
+			t.Errorf("List included hidden dir: %v", got)
+		}
+	}
+	if len(got) != 1 || got[0] != "12.3.rel1" {
+		t.Errorf("List = %v, want [12.3.rel1]", got)
+	}
 }
 
 // TestListEmpty covers the "fresh install, nothing yet" path.
@@ -269,6 +336,121 @@ func TestReset(t *testing.T) {
 		t.Fatalf("Reset: %v", err)
 	}
 	mustNotExist(t, dataDir)
+}
+
+// TestDeriveAsName: source filenames have their archive extension
+// stripped. Other extensions are left alone.
+func TestDeriveAsName(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2", "gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux"},
+		{"arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz", "arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi"},
+		{"foo.tar.gz", "foo"},
+		{"bar.zip", "bar"},
+		{"weird.TAR.BZ2", "weird"}, // case-insensitive match
+		{"no-extension", "no-extension"},
+	}
+	for _, c := range cases {
+		if got := deriveAsName(c.in); got != c.want {
+			t.Errorf("deriveAsName(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestValidateAsName rejects reserved names, separators, and edge cases.
+func TestValidateAsName(t *testing.T) {
+	good := []string{"14.3.rel1", "9-2019-q4", "custom-build", "1.0.0"}
+	for _, n := range good {
+		if err := validateAsName(n); err != nil {
+			t.Errorf("validateAsName(%q) errored: %v", n, err)
+		}
+	}
+	bad := []string{"", "current", "versions", "cache", ".", "..",
+		"with/slash", `with\backslash`}
+	for _, n := range bad {
+		if err := validateAsName(n); err == nil {
+			t.Errorf("validateAsName(%q) accepted invalid name", n)
+		}
+	}
+}
+
+// TestInstallFromSourceClobberRefused: pre-create versions/<name> and
+// confirm InstallFromSource refuses with a clear error mentioning both
+// the existing path and the --as workaround.
+func TestInstallFromSourceClobberRefused(t *testing.T) {
+	withTempDataDir(t)
+	if err := EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, paths.VersionDir("14.3.rel1"))
+
+	// Source doesn't have to be reachable — the function should fail
+	// before any download/extract step.
+	err := InstallFromSource(t.Context(), InstallSourceOpts{
+		Source: "https://example.invalid/some-archive.tar.gz",
+		As:     "14.3.rel1",
+	})
+	if err == nil {
+		t.Fatal("InstallFromSource should refuse to clobber existing version")
+	}
+	if !contains(err.Error(), "14.3.rel1") || !contains(err.Error(), "--as") {
+		t.Errorf("error %q should mention both the existing version and --as", err)
+	}
+}
+
+// TestResolveSourceLocal: a bare path or file:// URI resolves with
+// isLocal=true; the basename round-trips. file:// URI shape differs by
+// platform — Windows uses file:///C:/path with forward slashes.
+func TestResolveSourceLocal(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "armup-test.tar.gz")
+	mustWrite(t, archive, "")
+
+	srcs := []string{archive}
+	// Construct a properly-shaped file:// URI for the platform.
+	// Unix: file:///abs/path → url.Parse Path = /abs/path → Abs OK.
+	// Windows: file:///C:/abs/path → url.Parse Path = /C:/abs/path,
+	// which our resolveSource trims to C:/abs/path before Abs.
+	if runtime.GOOS == "windows" {
+		srcs = append(srcs, "file:///"+filepath.ToSlash(archive))
+	} else {
+		srcs = append(srcs, "file://"+archive)
+	}
+
+	for _, src := range srcs {
+		path, base, isLocal, err := resolveSource(src)
+		if err != nil {
+			t.Errorf("resolveSource(%q): %v", src, err)
+			continue
+		}
+		if !isLocal {
+			t.Errorf("resolveSource(%q): isLocal=false, want true", src)
+		}
+		if path != archive {
+			t.Errorf("resolveSource(%q): path=%q, want %q", src, path, archive)
+		}
+		if base != "armup-test.tar.gz" {
+			t.Errorf("resolveSource(%q): base=%q, want armup-test.tar.gz", src, base)
+		}
+	}
+}
+
+// TestResolveSourceRemote: an https URL resolves with isLocal=false; the
+// basename is the URL's last path segment.
+func TestResolveSourceRemote(t *testing.T) {
+	src := "https://example.com/archives/foo-1.2.3.tar.xz"
+	path, base, isLocal, err := resolveSource(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isLocal {
+		t.Error("isLocal=true for an https URL")
+	}
+	if path != "" {
+		t.Errorf("path=%q for remote source, want empty", path)
+	}
+	if base != "foo-1.2.3.tar.xz" {
+		t.Errorf("base=%q, want foo-1.2.3.tar.xz", base)
+	}
 }
 
 // helpers

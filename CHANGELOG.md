@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `armup install --from <SRC>` installs a toolchain from any URL or
+  local archive instead of the canonical developer.arm.com URL pattern.
+  Solves three real-world cases at once: legacy ARM releases (the
+  pre-2022 `gnu-rm` line, whose URLs don't fit a clean pattern),
+  internal corporate mirrors, and custom GCC builds.
+- `<SRC>` accepts HTTPS URLs, `file://` URIs, bare local paths, and
+  Windows UNC shares. Local archives are read in place — no copy to
+  the cache.
+- `--as <name>` overrides the version slot name (default: derived from
+  the source filename with archive extension stripped).
+- `--sha256 <hex>` verifies the archive before extraction; absent and
+  the install warns but proceeds (legacy archives don't ship checksum
+  sidecars).
+- Refuses to clobber an existing `versions/<name>` with a clear error
+  pointing the user at `--as` or `armup uninstall`.
+- `.tar.bz2` extraction support added (legacy ARM archives are bz2).
+
+### Changed
+
+- `promoteExtraction` now handles three archive layouts: wrapped with
+  the modern expected name, wrapped with any single arbitrary subdir
+  (legacy / custom builds), and unwrapped (newer Windows zips). Same
+  function, generalized.
+
 ## [1.2.0] — 2026-05-08
 
 ### Added
