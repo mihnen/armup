@@ -228,13 +228,31 @@ func InstallFromSource(ctx context.Context, opts InstallSourceOpts) error {
 		fmt.Printf("Using local archive %s\n", archivePath)
 	default:
 		archivePath = filepath.Join(paths.CacheDir(), srcFile)
-		fmt.Printf("Downloading %s\n", opts.Source)
-		if err := download.ToFile(ctx, opts.Source, archivePath); err != nil {
-			return err
+		// Reuse a verified cached archive when --sha256 is provided
+		// (mirrors the modern Install path). Without --sha256 we can't
+		// trust the cache, so we always re-download.
+		needDownload := true
+		if opts.SHA256 != "" {
+			if _, err := os.Stat(archivePath); err == nil {
+				if err := arm.VerifyFile(archivePath, opts.SHA256); err == nil {
+					fmt.Printf("Using cached %s\n", srcFile)
+					needDownload = false
+				} else {
+					fmt.Println("Cached archive failed verification, re-downloading")
+					os.Remove(archivePath)
+				}
+			}
+		}
+		if needDownload {
+			fmt.Printf("Downloading %s\n", opts.Source)
+			if err := download.ToFile(ctx, opts.Source, archivePath); err != nil {
+				return err
+			}
 		}
 	}
 
-	// Verify or warn.
+	// Verify or warn. (For remote+sha256 we already verified above; this
+	// covers local sources and remote-without-cache cases.)
 	if opts.SHA256 != "" {
 		if err := arm.VerifyFile(archivePath, opts.SHA256); err != nil {
 			if !isLocal {
@@ -367,10 +385,6 @@ func validateAsName(name string) error {
 // If setCurrentIfFirst is true and no current version is set, this becomes
 // the active one.
 func Install(ctx context.Context, version string, setCurrentIfFirst bool) error {
-	host, err := arm.CurrentHost()
-	if err != nil {
-		return err
-	}
 	if err := EnsureLayout(); err != nil {
 		return err
 	}
@@ -383,8 +397,36 @@ func Install(ctx context.Context, version string, setCurrentIfFirst bool) error 
 		return nil
 	}
 
+	// If this is a legacy version, route through InstallFromSource using
+	// the embedded URL + SHA-256 from the legacy table.
+	if entry, ok := arm.LegacyLookup(version); ok {
+		return InstallFromSource(ctx, InstallSourceOpts{
+			Source:            entry.URL,
+			As:                version,
+			SHA256:            entry.SHA256,
+			SetCurrentIfFirst: setCurrentIfFirst,
+		})
+	}
+
+	// Modern arm-gnu-toolchain path.
+	host, err := arm.CurrentHost()
+	if err != nil {
+		return err
+	}
 	host, err = host.ResolveForVersion(ctx, version)
 	if err != nil {
+		// Surface a more actionable error if version is in the legacy
+		// table but only for OTHER platforms — that's a clearer story
+		// than "ARM does not publish a x86_64 build for 7-2018-q2-update".
+		if perPlatform, ok := arm.Legacy[version]; ok {
+			var available []string
+			for plat := range perPlatform {
+				available = append(available, plat)
+			}
+			sort.Strings(available)
+			return fmt.Errorf("legacy version %s is not available for %s/%s (only: %v)",
+				version, runtime.GOOS, runtime.GOARCH, available)
+		}
 		return err
 	}
 
