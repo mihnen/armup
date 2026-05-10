@@ -115,7 +115,7 @@ GOOS=windows GOARCH=amd64 go build -o armup.exe   ./cmd/armup
 ```
 armup init                       one-time setup (creates data dir, updates PATH)
 armup available [--refresh]      list versions you can install
-armup install <version>          download from developer.arm.com (modern releases)
+armup install <version>          download from developer.arm.com
 armup install --from <SRC>       install from a custom URL or local archive
 armup list                       list installed versions; * marks active
 armup use <version>              switch the active version
@@ -136,44 +136,20 @@ Run `armup <command> -h` for command-specific help.
 `armup list`, `armup available`, `armup current`, `armup pinned`, and
 `armup which` all accept `--json` for scripting.
 
-## Legacy versions
-
-Pre-2022 ARM releases (the `gnu-rm` line) have inconsistent URL
-patterns and don't ship checksum sidecars, so they couldn't be reached
-by the standard `armup install <version>` flow. armup ships a curated
-table of them with embedded SHA-256 verification:
-
-```sh
-armup available --legacy        # list legacy versions for this platform
-armup install 10.3-2021.10      # works just like a modern install
-armup install 9-2019-q4-major
-```
-
-Versions in the legacy table use ARM's filename form (e.g.
-`9-2019-q4-major`, `10.3-2021.10`). Same `armup use`, `armup which`,
-`armup uninstall` apply to them as to modern versions.
-
-To see the table or add a new entry, see `internal/arm/legacy.go`.
-
 ## Custom installs
 
 `armup install --from <SRC>` installs a toolchain from any source you
 hand it. Useful for:
 
-- **Legacy ARM releases** that don't fit the modern URL pattern (the
-  pre-2022 `gnu-rm` line: 9-2019-q4, 10.3-2021.10, etc.).
 - **Internal mirrors** behind a corporate firewall.
 - **Custom GCC builds** with vendor patches.
+- **Any archive that isn't in `armup available`** but is laid out the
+  same way ARM ships theirs.
 
 `<SRC>` can be a remote URL, a `file://` URI, a bare local path, or a
 Windows UNC share. Examples:
 
 ```sh
-# Legacy ARM 9-2019-q4 (downloaded from developer.arm.com)
-armup install \
-  --from 'https://developer.arm.com/-/media/files/downloads/gnu-rm/9-2019q4/gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2' \
-  --as 9-2019-q4
-
 # Internal mirror
 armup install --from 'https://mirror.example.com/14.3.rel1.tar.xz' --as 14.3.rel1-mirror
 
@@ -188,10 +164,10 @@ Flags:
 
 - `--as <name>` — version slot name. Defaults to the source filename
   with archive extension stripped. You'll usually want to override it
-  with something short like `9-2019-q4`.
+  with something short.
 - `--sha256 <hex>` — verify the archive's SHA-256 before extraction.
-  If absent, a warning prints but the install proceeds. Legacy
-  archives don't ship checksum sidecars, so you'll often skip this.
+  If absent, a warning prints but the install proceeds. Skip it if
+  you don't have a checksum to verify against.
 
 armup refuses to clobber an existing `versions/<name>` slot — pick a
 different `--as` or `armup uninstall <name>` first.

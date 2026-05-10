@@ -145,9 +145,34 @@ func sortVersionsDesc(v []string) {
 	sort.Slice(v, func(i, j int) bool { return cmpVersions(v[i], v[j]) > 0 })
 }
 
+// MergeAvailable folds the embedded gnu-rm versions for the running
+// host into the given list of arm-gnu-toolchain versions and returns
+// the merged set sorted newest-first. Used by `armup available` so the
+// caller doesn't have to know about the two upstream catalogs.
+func MergeAvailable(modern []string) []string {
+	seen := make(map[string]struct{}, len(modern)+len(Legacy))
+	out := make([]string, 0, len(modern)+len(Legacy))
+	for _, v := range modern {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	for _, v := range LegacyVersions() {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sortVersionsDesc(out)
+	return out
+}
+
 func cmpVersions(a, b string) int {
-	ai := splitVersion(a)
-	bi := splitVersion(b)
+	ai := sortKey(a)
+	bi := sortKey(b)
 	for k := 0; k < len(ai) && k < len(bi); k++ {
 		if ai[k] != bi[k] {
 			if ai[k] < bi[k] {
@@ -163,6 +188,41 @@ func cmpVersions(a, b string) int {
 		return 1
 	}
 	return 0
+}
+
+// sortKey produces a comparison vector that orders ARM version strings
+// newest-first in true date order across both naming schemes:
+//
+//   - Modern versions (e.g. "14.3.rel1", "11.2-2022.02") share an
+//     undated form that uses only the major.minor.rel digits. We
+//     prepend a sentinel high year so they sort above legacy.
+//   - Legacy versions ("9-2019-q4-major", "10.3-2021.10",
+//     "5-2016-q1-update") all carry a 4-digit year token. We pull
+//     it out as the primary key, then the quarter/month tokens that
+//     follow the year, then the major-version tokens that precede it
+//     (as a tiebreaker when two releases hit the same quarter).
+//
+// Without this, naïve element-wise compare puts e.g. "10-2020-q4-major"
+// (split [10,2020,4]) above "10.3-2021.10" (split [10,3,2021,10])
+// because 2020 > 3 at the second position — date-incorrect.
+func sortKey(s string) []int {
+	parts := splitVersion(s)
+	yearIdx := -1
+	for i, p := range parts {
+		if p >= 2000 && p <= 2099 {
+			yearIdx = i
+			break
+		}
+	}
+	if yearIdx < 0 {
+		// Undated (modern) — sentinel year sorts above any real year.
+		return append([]int{9999}, parts...)
+	}
+	out := make([]int, 0, len(parts)+1)
+	out = append(out, parts[yearIdx])
+	out = append(out, parts[yearIdx+1:]...)
+	out = append(out, parts[:yearIdx]...)
+	return out
 }
 
 var nonNumRE = regexp.MustCompile(`\D+`)

@@ -181,38 +181,19 @@ Windows). Idempotent — safe to re-run.`)
 }
 
 func cmdAvailable(ctx context.Context, args []string) error {
-	fs := newFlagSet("available", "available [--refresh] [--legacy] [--json]",
-		`List ARM toolchain versions you can install. By default reads
-from the local cache (or the curated list if no cache exists).
-With --refresh, re-queries ARM and falls back to HEAD-probing
-the curated versions if ARM's downloads page is blocked.
+	fs := newFlagSet("available", "available [--refresh] [--json]",
+		`List ARM toolchain versions you can install, newest first.
 
-With --legacy, list pre-2022 ARM releases (the gnu-rm line) that
-are baked into armup with embedded SHA-256 verification. Filtered
-to those shipped for the running platform.
+By default reads from the local cache (or a curated fallback if
+no cache exists). With --refresh, re-queries ARM and falls back
+to HEAD-probing curated versions if ARM's downloads page is
+blocked.
 
-With --json, output the list as JSON with the source ("cached",
-"curated", "refresh", or "legacy") for scripting.`)
+With --json, output the list as JSON with a source field
+("cached", "curated", or "refresh") for scripting.`)
 	refresh := fs.Bool("refresh", false, "fetch the latest list from ARM")
-	legacy := fs.Bool("legacy", false, "list legacy (pre-2022) ARM releases")
 	asJSON := fs.Bool("json", false, "output as JSON")
 	fs.Parse(args)
-
-	if *legacy {
-		versions := arm.LegacyVersions()
-		if *asJSON {
-			return writeJSON(struct {
-				Source   string   `json:"source"`
-				Versions []string `json:"versions"`
-			}{"legacy", versions})
-		}
-		if len(versions) == 0 {
-			fmt.Fprintln(os.Stderr, "No legacy versions are shipped for this platform.")
-			return nil
-		}
-		printVersions(versions)
-		return nil
-	}
 
 	var versions []string
 	var source string
@@ -258,6 +239,8 @@ With --json, output the list as JSON with the source ("cached",
 			source = "curated"
 		}
 	}
+
+	versions = arm.MergeAvailable(versions)
 
 	if *asJSON {
 		return writeJSON(struct {
@@ -342,8 +325,8 @@ func cmdInstall(ctx context.Context, args []string) error {
 
   With --from <SRC>: install from an arbitrary source. <SRC> can
   be an HTTPS URL, a file:// URI, a bare local path, or a Windows
-  UNC share. Useful for legacy ARM versions whose URL doesn't fit
-  the modern pattern, internal mirrors, and custom GCC builds.
+  UNC share. Useful for internal mirrors, custom GCC builds, and
+  any other archive laid out the same way ARM ships theirs.
   --as <name> overrides the version slot name (default: derived
   from the source filename). --sha256 <hex> verifies the archive
   before extraction (otherwise a warning is printed).
@@ -761,13 +744,11 @@ func cmdCompleteHidden(args []string) error {
 			fmt.Println(v)
 		}
 	case "versions-available":
+		base := arm.Curated
 		if cached, _ := arm.LoadCachedAvailable(paths.AvailableFile()); len(cached) > 0 {
-			for _, v := range cached {
-				fmt.Println(v)
-			}
-			return nil
+			base = cached
 		}
-		for _, v := range arm.Curated {
+		for _, v := range arm.MergeAvailable(base) {
 			fmt.Println(v)
 		}
 	}

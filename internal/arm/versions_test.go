@@ -70,6 +70,91 @@ func TestSortVersionsDesc(t *testing.T) {
 	}
 }
 
+// Date-bearing versions (gnu-rm form) must sort by year-then-quarter,
+// not by element-wise digit compare. Naïve splitVersion would put
+// "10-2020-q4-major" [10,2020,4] above "10.3-2021.10" [10,3,2021,10]
+// because 2020 > 3 at index 1. The sortKey indirection fixes that.
+func TestSortVersionsDescDateOrder(t *testing.T) {
+	in := []string{
+		"5-2016-q3-update",
+		"10.3-2021.07",
+		"6-2017-q2-update",
+		"15.2.rel1",
+		"10-2020-q4-major",
+		"9-2019-q4-major",
+		"10.3-2021.10",
+		"14.3.rel1",
+		"6-2016-q4-major",
+		"10-2020-q2-preview",
+	}
+	want := []string{
+		"15.2.rel1",    // undated — newest sentinel
+		"14.3.rel1",    // undated
+		"10.3-2021.10", // 2021-10
+		"10.3-2021.07", // 2021-07
+		"10-2020-q4-major",
+		"10-2020-q2-preview",
+		"9-2019-q4-major",
+		"6-2017-q2-update",
+		"6-2016-q4-major",
+		"5-2016-q3-update",
+	}
+	sortVersionsDesc(in)
+	if !reflect.DeepEqual(in, want) {
+		t.Errorf("sortVersionsDesc (mixed):\ngot:  %v\nwant: %v", in, want)
+	}
+}
+
+// MergeAvailable is the entry point used by `armup available` to fold
+// the embedded gnu-rm table into the running list. It must dedupe and
+// sort newest-first.
+func TestMergeAvailable(t *testing.T) {
+	modern := []string{"15.2.rel1", "14.3.rel1"}
+	merged := MergeAvailable(modern)
+
+	// Modern entries appear first, in input order.
+	if len(merged) < 2 || merged[0] != "15.2.rel1" || merged[1] != "14.3.rel1" {
+		t.Errorf("expected modern entries at the head; got %v", merged)
+	}
+
+	// Every legacy entry available for this host must be present.
+	for _, v := range LegacyVersions() {
+		found := false
+		for _, m := range merged {
+			if m == v {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("legacy version %q missing from merged list", v)
+		}
+	}
+
+	// Result must be in non-increasing cmpVersions order.
+	for i := 1; i < len(merged); i++ {
+		if cmpVersions(merged[i-1], merged[i]) < 0 {
+			t.Errorf("merged not descending at %d (%s before %s): %v",
+				i, merged[i-1], merged[i], merged)
+			break
+		}
+	}
+
+	// Dedupe: a modern entry that also exists in Legacy should appear once.
+	if _, hit := Legacy["10.3-2021.10"]; hit {
+		dup := MergeAvailable([]string{"10.3-2021.10"})
+		count := 0
+		for _, v := range dup {
+			if v == "10.3-2021.10" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected 10.3-2021.10 to appear once after merge, got %d (full: %v)", count, dup)
+		}
+	}
+}
+
 func TestSplitVersion(t *testing.T) {
 	cases := []struct {
 		in   string
