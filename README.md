@@ -92,6 +92,25 @@ A few Windows-specific things to know:
   [`LongPathsEnabled`](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)
   in the registry or Group Policy Editor.
 
+### GitHub Actions
+
+[`mihnen/setup-armup`](https://github.com/mihnen/setup-armup) installs
+armup and a chosen toolchain in a workflow:
+
+```yaml
+- uses: mihnen/setup-armup@v1
+  with:
+    version: 14.3.rel1
+- run: arm-none-eabi-gcc --version
+```
+
+The toolchain `bin/` directory is added to `PATH` for the rest of the
+job. Caching is on by default — first run downloads, subsequent runs
+hit the cache. Works on `ubuntu-*`, `macos-*`, and `windows-*` runners.
+See the
+[setup-armup README](https://github.com/mihnen/setup-armup#readme) for
+the full input/output reference and a multi-version matrix example.
+
 ### Build from source
 
 Requires Go 1.25+:
