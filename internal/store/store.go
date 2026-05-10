@@ -308,7 +308,7 @@ func resolveSource(src string) (path, basename string, isLocal bool, err error) 
 		if base == "." || base == "/" || base == "" {
 			return "", "", false, fmt.Errorf("cannot derive a filename from URL %s", src)
 		}
-		return "", base, false, nil
+		return "", normalizeArchiveBasename(base), false, nil
 	case strings.HasPrefix(src, "file://"):
 		u, err := url.Parse(src)
 		if err != nil {
@@ -347,6 +347,28 @@ func resolveSource(src string) (path, basename string, isLocal bool, err error) 
 // archiveExts are stripped (in order) from the source basename when
 // deriving a default --as name. Strip the longest match first.
 var archiveExts = []string{".tar.bz2", ".tar.gz", ".tar.xz", ".zip"}
+
+// normalizeArchiveBasename injects a missing dot before tar.bz2 / tar.gz /
+// tar.xz when an upstream URL serves an archive with a mangled filename.
+// ARM's pre-2018 download links for some Linux/macOS archives come back
+// with names like "gccarmnoneeabi532016q120160330linuxtar.bz2" — same
+// bytes, but the dot before "tar" got stripped, so HasSuffix(".tar.bz2")
+// fails and archive.Extract can't dispatch. Normalizing the cache
+// filename lets the rest of the pipeline treat these archives the same
+// as any other tar.bz2.
+func normalizeArchiveBasename(name string) string {
+	low := strings.ToLower(name)
+	for _, ext := range []string{".tar.bz2", ".tar.gz", ".tar.xz"} {
+		if strings.HasSuffix(low, ext) {
+			return name
+		}
+		bare := ext[1:] // "tar.bz2"
+		if strings.HasSuffix(low, bare) {
+			return name[:len(name)-len(bare)] + ext
+		}
+	}
+	return name
+}
 
 func deriveAsName(basename string) string {
 	low := strings.ToLower(basename)
