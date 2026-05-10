@@ -54,6 +54,7 @@ commands:
   uninstall <version> [-f]   Remove a version (-f to remove the active one)
   reset [-f] [--keep-shell]  Remove every installed version and armup data
   which                      Print the active toolchain's bin directory
+  doctor                     Print a self-diagnostic of armup's state
   completion <shell>         Print a shell-completion script (bash, zsh, fish, powershell)
   self-update [--nightly]    Replace the running binary with the latest release (or nightly)
   version                    Print armup's version
@@ -104,6 +105,8 @@ func run() int {
 		err = cmdReset(args)
 	case "which":
 		err = cmdWhich(args)
+	case "doctor":
+		err = cmdDoctor(ctx, args)
 	case "completion":
 		err = cmdCompletion(args)
 	case "self-update":
@@ -733,8 +736,8 @@ func cmdCompleteHidden(args []string) error {
 	case "subcommands":
 		for _, c := range []string{
 			"init", "available", "list", "install", "use", "current",
-			"pinned", "uninstall", "reset", "which", "completion",
-			"self-update", "version", "help",
+			"pinned", "uninstall", "reset", "which", "doctor",
+			"completion", "self-update", "version", "help",
 		} {
 			fmt.Println(c)
 		}
