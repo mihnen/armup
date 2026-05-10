@@ -21,38 +21,77 @@ import (
 // cmdDoctor prints a self-diagnostic. The exit code is non-zero only
 // when at least one check is FAIL — warnings (broken pin, stale staging,
 // no PATH entry) print but don't fail scripts.
+//
+// Optional cleanup flags apply selected fixes after the read-only walk:
+//
+//	--fix             remove .staging-* dirs and dangling current symlink
+//	--clean-cache     wipe the download cache
+//	--remove-broken   delete installed versions whose gcc can't run
 func cmdDoctor(ctx context.Context, args []string) error {
-	fs := newFlagSet("doctor", "doctor",
+	fs := newFlagSet("doctor", "doctor [--fix] [--clean-cache] [--remove-broken]",
 		`Print a self-diagnostic of armup's state.
 
-Reports OK / WARN / FAIL on each check: data directory layout,
-PATH, active toolchain runnability, pinned version, installed
-versions, leftover staging directories, and the cached available
-list. Useful for triaging "armup says it's installed but the
-toolchain can't run" issues.
+Reports OK / WARN / FAIL on data directory layout, PATH, active
+toolchain runnability, pinned version, installed versions (each
+verified to run), leftover staging directories, orphan files,
+and the cached available list. Useful for triaging "armup says
+it's installed but the toolchain can't run" issues.
 
-Exits non-zero only when a check fails outright; warnings still
-exit 0 so scripts can run doctor opportunistically.`)
+Cleanup flags (applied after the read-only walk):
+
+  --fix              Remove leftover .staging-<name> directories
+                     and a dangling 'current' symlink. Safe — these
+                     are pure broken-state artifacts.
+  --clean-cache      Wipe <data>/cache/. Removes downloaded archives
+                     left over from before armup auto-cleaned them
+                     or from --keep-archive installs.
+  --remove-broken    Delete installed versions whose
+                     bin/arm-none-eabi-gcc is missing or won't run.
+
+Flags can be combined. Exits non-zero when a FAIL remains after
+any selected fixes; warnings exit 0.`)
+	fixFlag := fs.Bool("fix", false, "remove .staging-* dirs and a dangling current symlink")
+	cleanCacheFlag := fs.Bool("clean-cache", false, "wipe the download cache")
+	removeBrokenFlag := fs.Bool("remove-broken", false, "delete installed versions whose gcc won't run")
 	fs.Parse(args)
 
-	d := &doctor{}
+	d := &doctor{ctx: ctx}
 	d.printf("armup %s\n", version)
 	d.printf("platform: %s/%s\n\n", runtime.GOOS, runtime.GOARCH)
 
 	d.checkDataDir()
 	d.checkPATH()
-	d.checkCurrent(ctx)
+	d.checkCurrent()
 	d.checkInstalled()
+	d.checkOrphans()
 	d.checkStaging()
 	d.checkPin()
 	d.checkAvailableCache()
 	d.checkCacheSize()
 
+	if *fixFlag || *cleanCacheFlag || *removeBrokenFlag {
+		fmt.Println()
+		fmt.Println("Applying fixes:")
+		if *fixFlag {
+			d.fixStaging()
+			d.fixDanglingCurrent()
+		}
+		if *cleanCacheFlag {
+			d.fixCleanCache()
+		}
+		if *removeBrokenFlag {
+			d.fixRemoveBroken()
+		}
+	}
+
 	fmt.Println()
+	remaining := d.fails - d.fixed
 	switch {
-	case d.fails > 0:
-		fmt.Printf("Doctor: %d issue(s), %d warning(s).\n", d.fails, d.warns)
-		return fmt.Errorf("doctor reported %d failure(s)", d.fails)
+	case remaining > 0:
+		fmt.Printf("Doctor: %d issue(s) remaining, %d warning(s), %d fixed.\n", remaining, d.warns, d.fixed)
+		return fmt.Errorf("doctor reported %d unresolved failure(s)", remaining)
+	case d.fixed > 0:
+		fmt.Printf("Doctor: %d issue(s) fixed, %d warning(s).\n", d.fixed, d.warns)
 	case d.warns > 0:
 		fmt.Printf("Doctor: 0 issues, %d warning(s).\n", d.warns)
 	default:
@@ -62,8 +101,17 @@ exit 0 so scripts can run doctor opportunistically.`)
 }
 
 type doctor struct {
+	ctx context.Context
+
 	fails int
 	warns int
+	fixed int
+
+	// Actionable state collected during the read-only walk, consumed
+	// by the fix-* methods.
+	staleStaging    []string // full paths to .staging-* dirs
+	danglingCurrent string   // path of dangling current symlink, or ""
+	brokenVersions  []string // installed versions whose gcc won't run
 }
 
 func (d *doctor) printf(f string, a ...any) { fmt.Printf(f, a...) }
@@ -137,7 +185,7 @@ func pathsEqual(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
-func (d *doctor) checkCurrent(ctx context.Context) {
+func (d *doctor) checkCurrent() {
 	cur, err := store.Current()
 	if err != nil {
 		d.fail("current symlink readable", err.Error(), "")
@@ -152,30 +200,16 @@ func (d *doctor) checkCurrent(ctx context.Context) {
 	if _, err := os.Stat(verDir); err != nil {
 		d.fail("current symlink target exists",
 			fmt.Sprintf("%s → %s (missing)", cur, verDir),
-			"Run `armup use <version>` to point at an installed version.")
+			"Run with --fix to clear it, or `armup use <version>` to repoint.")
+		d.danglingCurrent = filepath.Join(paths.DataDir(), "current")
 		return
 	}
 	d.ok("current symlink", "→ "+cur)
-
-	gcc := filepath.Join(verDir, "bin", "arm-none-eabi-gcc")
-	if runtime.GOOS == "windows" {
-		gcc += ".exe"
-	}
-	if _, err := os.Stat(gcc); err != nil {
-		d.fail("current toolchain has gcc binary", err.Error(),
-			"Re-install with `armup install "+cur+"`.")
-		return
-	}
-	out, err := exec.CommandContext(ctx, gcc, "--version").Output()
-	if err != nil {
-		d.fail("current toolchain runs", err.Error(),
-			"Try `"+gcc+" --version` directly to investigate.")
-		return
-	}
-	banner := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)[0]
-	d.ok("current toolchain runs", banner)
 }
 
+// checkInstalled lists installed versions and verifies each one's
+// arm-none-eabi-gcc actually runs. Broken installs (missing binary
+// or exec failure) are collected so --remove-broken can act on them.
 func (d *doctor) checkInstalled() {
 	versions, err := store.List()
 	if err != nil {
@@ -194,14 +228,69 @@ func (d *doctor) checkInstalled() {
 		if v == cur {
 			marker = " *"
 		}
-		fmt.Printf("       %s %-22s %s\n", marker, v, humanSize(size))
+		status, banner := d.verifyVersion(v)
+		head := fmt.Sprintf("%s %-22s %s", marker, v, humanSize(size))
+		switch status {
+		case "OK":
+			if v == cur {
+				fmt.Printf("       %-44s OK   %s\n", head, banner)
+			} else {
+				fmt.Printf("       %-44s OK\n", head)
+			}
+		default:
+			fmt.Printf("       %-44s BROKEN  %s\n", head, banner)
+			d.fails++
+			d.brokenVersions = append(d.brokenVersions, v)
+		}
 	}
+}
+
+// verifyVersion runs <verDir>/bin/arm-none-eabi-gcc --version and
+// returns ("OK", banner) on success or ("BROKEN", reason) on
+// failure (missing binary, exec error, non-zero exit).
+func (d *doctor) verifyVersion(v string) (status, detail string) {
+	gcc := filepath.Join(paths.VersionDir(v), "bin", "arm-none-eabi-gcc")
+	if runtime.GOOS == "windows" {
+		gcc += ".exe"
+	}
+	if _, err := os.Stat(gcc); err != nil {
+		return "BROKEN", "gcc binary missing"
+	}
+	out, err := exec.CommandContext(d.ctx, gcc, "--version").Output()
+	if err != nil {
+		return "BROKEN", "gcc failed to run: " + err.Error()
+	}
+	return "OK", strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)[0]
+}
+
+// checkOrphans flags files (not directories) at the top of versions/.
+// Every legitimate entry there is either an install dir or a
+// .staging-* dir. Loose files indicate manual fiddling and won't
+// hurt anything but shouldn't be there.
+func (d *doctor) checkOrphans() {
+	versionsDir := paths.VersionsDir()
+	entries, err := os.ReadDir(versionsDir)
+	if err != nil {
+		return
+	}
+	var orphans []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			orphans = append(orphans, e.Name())
+		}
+	}
+	if len(orphans) == 0 {
+		d.ok("no orphan files in versions/", "")
+		return
+	}
+	d.warn("orphan files in versions/",
+		fmt.Sprintf("%d found: %s", len(orphans), strings.Join(orphans, ", ")),
+		"Remove by hand — armup never creates files here.")
 }
 
 // .staging-<name> directories are created during install and renamed
 // to versions/<name> on success. Their presence indicates an
-// interrupted install — an `armup uninstall <name>` (or manual
-// removal) is the cleanup.
+// interrupted install — `armup doctor --fix` removes them.
 func (d *doctor) checkStaging() {
 	versionsDir := paths.VersionsDir()
 	entries, err := os.ReadDir(versionsDir)
@@ -209,19 +298,89 @@ func (d *doctor) checkStaging() {
 		// Already reported by checkDataDir; don't double-warn.
 		return
 	}
-	var stale []string
 	for _, e := range entries {
 		if e.IsDir() && strings.HasPrefix(e.Name(), ".staging-") {
-			stale = append(stale, e.Name())
+			d.staleStaging = append(d.staleStaging, filepath.Join(versionsDir, e.Name()))
 		}
 	}
-	if len(stale) == 0 {
+	if len(d.staleStaging) == 0 {
 		d.ok("no leftover .staging-* directories", "")
 		return
 	}
 	d.warn("leftover .staging-* directories",
-		fmt.Sprintf("%d found", len(stale)),
-		"Remove with: rm -rf "+filepath.Join(versionsDir, ".staging-*"))
+		fmt.Sprintf("%d found", len(d.staleStaging)),
+		"Run `armup doctor --fix` to remove.")
+}
+
+// fixStaging removes every .staging-* directory collected during the
+// read-only walk. Counts toward d.fixed (which offsets d.fails for the
+// summary).
+func (d *doctor) fixStaging() {
+	for _, p := range d.staleStaging {
+		if err := os.RemoveAll(p); err != nil {
+			fmt.Printf("[FAIL] removing %s: %v\n", p, err)
+			continue
+		}
+		fmt.Printf("[FIXED] removed %s\n", p)
+		// .staging-* started as a WARN, not a FAIL — fixing it just
+		// clears the warning. Don't increment d.fixed (which would
+		// double-count against d.fails in the summary).
+	}
+	d.staleStaging = nil
+}
+
+// fixDanglingCurrent removes a 'current' symlink whose target version
+// no longer exists. After the fix, the data dir is in a consistent
+// "no version active" state; `armup use <X>` repoints it.
+func (d *doctor) fixDanglingCurrent() {
+	if d.danglingCurrent == "" {
+		return
+	}
+	if err := os.Remove(d.danglingCurrent); err != nil {
+		fmt.Printf("[FAIL] removing %s: %v\n", d.danglingCurrent, err)
+		return
+	}
+	fmt.Printf("[FIXED] removed dangling current symlink %s\n", d.danglingCurrent)
+	d.fixed++
+	d.danglingCurrent = ""
+}
+
+// fixCleanCache wipes every file under cache/. Logs the freed bytes
+// for visibility. Counts as INFO, not FIXED — cache contents weren't
+// a "FAIL" to begin with.
+func (d *doctor) fixCleanCache() {
+	dir := paths.CacheDir()
+	before := dirSize(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		fmt.Printf("[FAIL] reading cache dir %s: %v\n", dir, err)
+		return
+	}
+	removed := 0
+	for _, e := range entries {
+		p := filepath.Join(dir, e.Name())
+		if err := os.RemoveAll(p); err != nil {
+			fmt.Printf("[FAIL] removing %s: %v\n", p, err)
+			continue
+		}
+		removed++
+	}
+	fmt.Printf("[FIXED] wiped %d cache item(s), freed %s\n", removed, humanSize(before))
+}
+
+// fixRemoveBroken deletes every installed version that checkInstalled
+// flagged as BROKEN. Each removal is a FIXED for that version's FAIL.
+func (d *doctor) fixRemoveBroken() {
+	for _, v := range d.brokenVersions {
+		verDir := paths.VersionDir(v)
+		if err := os.RemoveAll(verDir); err != nil {
+			fmt.Printf("[FAIL] removing %s: %v\n", verDir, err)
+			continue
+		}
+		fmt.Printf("[FIXED] removed broken version %s\n", v)
+		d.fixed++
+	}
+	d.brokenVersions = nil
 }
 
 // checkPin reports the per-project pin (if any), notes whether the

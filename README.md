@@ -145,7 +145,7 @@ armup which <version>            print a specific installed version's bin direct
 armup which --pinned             print the project-pinned version's bin directory
 armup uninstall <version> [-f]   remove a version (-f to remove the active one)
 armup reset [-f] [--keep-shell]  remove all versions and armup data
-armup doctor                     run a self-diagnostic of armup's state
+armup doctor                     run a self-diagnostic; cleanup via --fix, --clean-cache, --remove-broken
 armup completion <shell>         print a shell-completion script (bash, zsh, fish, powershell)
 armup self-update [--nightly]    replace the running binary with the latest release (or nightly build)
 armup version                    print armup's version
