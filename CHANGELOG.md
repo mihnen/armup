@@ -7,19 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-05-10
+
 ### Added
 
-- Built-in support for legacy ARM toolchain releases (the pre-2022
-  `gnu-rm` line). `armup install 10.3-2021.10`, `armup install
-  9-2019-q4-major`, etc. now work directly. armup ships a curated
-  table of legacy versions with their URLs and embedded SHA-256s
-  (computed locally after verifying ARM's published MD5 — legacy
-  archives don't ship a SHA-256 sidecar).
-- `armup available --legacy` lists legacy versions for the running
-  platform.
-- Legacy entries reuse the same install pipeline as `--from`:
-  download, verify SHA-256, extract, register. Idempotent and
-  refuses to clobber existing slots.
+- Built-in catalog of every release on developer.arm.com, including
+  the pre-2022 `gnu-rm` line. `armup install <version>` resolves any
+  of them directly — no extra flags, no `--from` for the common case.
+  16 gnu-rm-era versions covered: 10.3-2021.10, 10.3-2021.07,
+  10-2020-q4-major, 10-2020-q2-preview, 9-2020-q2-update,
+  9-2019-q4-major, 8-2019-q3-update, 8-2018-q4-major, 7-2018-q2-update,
+  7-2017-q4-major, 6-2017-q2-update, 6-2017-q1-update, 6-2016-q4-major,
+  5-2016-q3-update, 5-2016-q2-update, 5-2016-q1-update. Each entry
+  carries an embedded SHA-256 cross-verified against ARM- or
+  Launchpad-published MD5s where available.
+- `armup available` shows every catalog release in one list, sorted
+  newest-first by release date.
 
 ## [1.3.0] — 2026-05-09
 
