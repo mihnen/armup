@@ -312,7 +312,7 @@ func TestInstallIdempotent(t *testing.T) {
 
 	// No network access required: Install must short-circuit when verDir
 	// already exists.
-	if err := Install(t.Context(), "14.3.rel1", true); err != nil {
+	if err := Install(t.Context(), "14.3.rel1", true, false); err != nil {
 		t.Fatalf("Install on already-installed version errored: %v", err)
 	}
 }

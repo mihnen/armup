@@ -317,7 +317,7 @@ absolute path and active-status flag.`)
 }
 
 func cmdInstall(ctx context.Context, args []string) error {
-	fs := newFlagSet("install", "install [<version>] | install --from <SRC> [--as <name>] [--sha256 <hex>]",
+	fs := newFlagSet("install", "install [<version>] | install --from <SRC> [--as <name>] [--sha256 <hex>] [--keep-archive]",
 		`Install a toolchain.
 
   With <version>: download from developer.arm.com using ARM's
@@ -334,12 +334,18 @@ func cmdInstall(ctx context.Context, args []string) error {
   from the source filename). --sha256 <hex> verifies the archive
   before extraction (otherwise a warning is printed).
 
+  --keep-archive retains the downloaded archive in the cache after
+  a successful install. By default it's removed once the version
+  is extracted, since the install itself no longer needs it. Local
+  sources (file:// or bare paths) are never deleted regardless.
+
   --from and a positional <version> are mutually exclusive. If no
   version is currently active, the newly-installed one becomes
   active in either flow.`)
 	fromFlag := fs.String("from", "", "URL or local path to a toolchain archive")
 	asFlag := fs.String("as", "", "name to install under (defaults to source filename)")
 	sha256Flag := fs.String("sha256", "", "expected hex SHA-256 of the archive")
+	keepFlag := fs.Bool("keep-archive", false, "retain the cached download after a successful install")
 	fs.Parse(args)
 
 	if *fromFlag != "" {
@@ -352,6 +358,7 @@ func cmdInstall(ctx context.Context, args []string) error {
 			As:                *asFlag,
 			SHA256:            *sha256Flag,
 			SetCurrentIfFirst: true,
+			KeepArchive:       *keepFlag,
 		})
 	}
 
@@ -374,7 +381,7 @@ func cmdInstall(ctx context.Context, args []string) error {
 		fs.Usage()
 		return errors.New("too many arguments")
 	}
-	return store.Install(ctx, version, true)
+	return store.Install(ctx, version, true, *keepFlag)
 }
 
 func cmdUse(args []string) error {

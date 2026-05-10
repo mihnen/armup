@@ -188,6 +188,11 @@ Flags:
 - `--sha256 <hex>` — verify the archive's SHA-256 before extraction.
   If absent, a warning prints but the install proceeds. Skip it if
   you don't have a checksum to verify against.
+- `--keep-archive` — retain the cached download after a successful
+  install. By default the archive is deleted once the version is
+  extracted (the install itself no longer needs it). Local sources
+  (`file://` URIs or bare paths) are never deleted regardless. Applies
+  to plain `armup install <version>` too.
 
 armup refuses to clobber an existing `versions/<name>` slot — pick a
 different `--as` or `armup uninstall <name>` first.

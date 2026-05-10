@@ -185,6 +185,12 @@ type InstallSourceOpts struct {
 	// SetCurrentIfFirst: when true and no version is currently active,
 	// the freshly-installed one becomes active. Same semantics as Install.
 	SetCurrentIfFirst bool
+	// KeepArchive: when true, the cached download is retained after a
+	// successful extract. Default is to delete it (the version is
+	// already extracted; the archive is no longer needed). Local
+	// sources (file:// URI or bare path) are never deleted — they
+	// don't belong to armup.
+	KeepArchive bool
 }
 
 // InstallFromSource installs a toolchain from an arbitrary source — used
@@ -283,6 +289,13 @@ func InstallFromSource(ctx context.Context, opts InstallSourceOpts) error {
 	if err := promoteExtraction(stagingDir, "", verDir); err != nil {
 		os.RemoveAll(stagingDir)
 		return err
+	}
+
+	// Drop the cached download once the version is extracted. Local
+	// sources stay put (they're the user's own files). KeepArchive
+	// opts back into retention for users who want offline reinstall.
+	if !isLocal && !opts.KeepArchive {
+		_ = os.Remove(archivePath)
 	}
 
 	if opts.SetCurrentIfFirst {
@@ -405,8 +418,9 @@ func validateAsName(name string) error {
 
 // Install downloads, verifies, and extracts a version.
 // If setCurrentIfFirst is true and no current version is set, this becomes
-// the active one.
-func Install(ctx context.Context, version string, setCurrentIfFirst bool) error {
+// the active one. If keepArchive is true, the cached download survives
+// the install — by default it's deleted once extraction succeeds.
+func Install(ctx context.Context, version string, setCurrentIfFirst, keepArchive bool) error {
 	if err := EnsureLayout(); err != nil {
 		return err
 	}
@@ -427,6 +441,7 @@ func Install(ctx context.Context, version string, setCurrentIfFirst bool) error 
 			As:                version,
 			SHA256:            entry.SHA256,
 			SetCurrentIfFirst: setCurrentIfFirst,
+			KeepArchive:       keepArchive,
 		})
 	}
 
@@ -501,6 +516,12 @@ func Install(ctx context.Context, version string, setCurrentIfFirst bool) error 
 	if err := promoteExtraction(stagingDir, host.InnerDirName(version), verDir); err != nil {
 		os.RemoveAll(stagingDir)
 		return err
+	}
+
+	// Drop the cached download once the version is extracted. KeepArchive
+	// opts back into retention for users who want offline reinstall.
+	if !keepArchive {
+		_ = os.Remove(archivePath)
 	}
 
 	if setCurrentIfFirst {
