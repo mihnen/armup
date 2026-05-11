@@ -8,11 +8,20 @@ import (
 // LegacyEntry is one platform-specific archive of a legacy ARM toolchain
 // release. The URL points at developer.arm.com's gnu-rm CDN path; the
 // SHA-256 was computed locally after verifying ARM's MD5 (legacy archives
-// don't ship a SHA-256 sidecar, so we embed our own here for ongoing
+// don't ship a SHA-256 file, so we embed our own here for ongoing
 // verification).
+//
+// Mirror is the URL form used when ARMUP_MIRROR is set. For most
+// entries it's empty — the mirror just serves the same path as ARM
+// after prefix substitution. For the pre-2017 entries whose direct
+// developer.arm.com URL has a mangled filename and ?revision query
+// string (Akamai-side routing quirk), Mirror carries the canonical
+// filename that an `armup mirror create` directory would actually
+// contain.
 type LegacyEntry struct {
 	URL    string
 	SHA256 string
+	Mirror string
 }
 
 // Legacy maps a version string (ARM's display form on the gnu-rm page,
@@ -118,12 +127,28 @@ var Legacy = map[string]map[string]LegacyEntry{
 		"darwin-amd64":  {URL: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_4-2016q3/gcc-arm-none-eabi-5_4-2016q3-20160926-mac.tar.bz2", SHA256: "5656cdec40f99d5c054a85bbc694276e1c4a1488cdacbbc448bc6acd3bbe070d"},
 	},
 	"5-2016-q2-update": {
-		"linux-amd64":  {URL: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_4-2016q2/gccarmnoneeabi542016q220160622linuxtar.bz2?revision=8f445a99-c1ae-4ed8-9eb8-f41929a671c4", SHA256: "9910b6b5df12efe564dbb3856bf1599d4c16178a6f28bd8a23c9e5c3edc219e4"},
-		"darwin-amd64": {URL: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_4-2016q2/gccarmnoneeabi542016q220160622mactar.bz2?revision=03ae9f41-1f43-40ed-9db8-a4b6342378ac", SHA256: "e175a0eb7ee312013d9078a5031a14bf14dff82c7e697549f04b22e6084264c8"},
+		"linux-amd64": {
+			URL:    "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_4-2016q2/gccarmnoneeabi542016q220160622linuxtar.bz2?revision=8f445a99-c1ae-4ed8-9eb8-f41929a671c4",
+			SHA256: "9910b6b5df12efe564dbb3856bf1599d4c16178a6f28bd8a23c9e5c3edc219e4",
+			Mirror: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_4-2016q2/gcc-arm-none-eabi-5_4-2016q2-20160622-linux.tar.bz2",
+		},
+		"darwin-amd64": {
+			URL:    "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_4-2016q2/gccarmnoneeabi542016q220160622mactar.bz2?revision=03ae9f41-1f43-40ed-9db8-a4b6342378ac",
+			SHA256: "e175a0eb7ee312013d9078a5031a14bf14dff82c7e697549f04b22e6084264c8",
+			Mirror: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_4-2016q2/gcc-arm-none-eabi-5_4-2016q2-20160622-mac.tar.bz2",
+		},
 	},
 	"5-2016-q1-update": {
-		"linux-amd64":  {URL: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_3-2016q1/gccarmnoneeabi532016q120160330linuxtar.bz2?revision=417e2623-c259-4a12-aacc-c87200b569c7", SHA256: "217850b0f3297014e8e52010aa52da0a83a073ddec4dc49b1a747458c5d6a223"},
-		"darwin-amd64": {URL: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_3-2016q1/gccarmnoneeabi532016q120160330mactar.bz2?revision=f8c9bfa2-ae89-470c-a845-5fa423439b47", SHA256: "480843ca1ce2d3602307f760872580e999acea0e34ec3d6f8b6ad02d3db409cf"},
+		"linux-amd64": {
+			URL:    "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_3-2016q1/gccarmnoneeabi532016q120160330linuxtar.bz2?revision=417e2623-c259-4a12-aacc-c87200b569c7",
+			SHA256: "217850b0f3297014e8e52010aa52da0a83a073ddec4dc49b1a747458c5d6a223",
+			Mirror: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_3-2016q1/gcc-arm-none-eabi-5_3-2016q1-20160330-linux.tar.bz2",
+		},
+		"darwin-amd64": {
+			URL:    "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_3-2016q1/gccarmnoneeabi532016q120160330mactar.bz2?revision=f8c9bfa2-ae89-470c-a845-5fa423439b47",
+			SHA256: "480843ca1ce2d3602307f760872580e999acea0e34ec3d6f8b6ad02d3db409cf",
+			Mirror: "https://developer.arm.com/-/media/files/downloads/gnu-rm/5_3-2016q1/gcc-arm-none-eabi-5_3-2016q1-20160330-mac.tar.bz2",
+		},
 	},
 }
 

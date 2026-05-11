@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -13,34 +14,47 @@ type Host struct {
 	Ext    string // ".tar.xz" or ".zip"
 }
 
+// SupportedPlatforms enumerates every (os-arch) key armup recognizes.
+// Used by `armup mirror create` to validate --platforms inputs and
+// to enumerate "all" when the user passes "all".
+var SupportedPlatforms = []string{
+	"linux-amd64",
+	"linux-arm64",
+	"darwin-amd64",
+	"darwin-arm64",
+	"windows-amd64",
+}
+
+// HostFor returns the ARM-toolchain host descriptor for a platform key
+// like "linux-amd64". Returns an error for unknown platforms. On
+// Windows the returned triple is the *preferred* one (x86_64 mingw,
+// only shipped from 14.2.rel1 onward); call ResolveForVersion before
+// using the host's URLs to fall back to the i686 mingw variant for
+// older releases.
+func HostFor(platform string) (Host, error) {
+	switch platform {
+	case "linux-amd64":
+		return Host{"x86_64-arm-none-eabi", ".tar.xz"}, nil
+	case "linux-arm64":
+		return Host{"aarch64-arm-none-eabi", ".tar.xz"}, nil
+	case "darwin-amd64":
+		return Host{"darwin-x86_64-arm-none-eabi", ".tar.xz"}, nil
+	case "darwin-arm64":
+		return Host{"darwin-arm64-arm-none-eabi", ".tar.xz"}, nil
+	case "windows-amd64":
+		return Host{"mingw-w64-x86_64-arm-none-eabi", ".zip"}, nil
+	}
+	return Host{}, fmt.Errorf("arm: unsupported platform %q", platform)
+}
+
 // CurrentHost returns the ARM-toolchain host descriptor for the running
 // process. Errors out for unsupported GOOS/GOARCH combos.
-//
-// On Windows the returned triple is the *preferred* one (x86_64 mingw, only
-// shipped from 14.2.rel1 onward); call ResolveForVersion before using the
-// host's URLs to fall back to the i686 mingw variant for older releases.
 func CurrentHost() (Host, error) {
-	switch runtime.GOOS {
-	case "linux":
-		switch runtime.GOARCH {
-		case "amd64":
-			return Host{"x86_64-arm-none-eabi", ".tar.xz"}, nil
-		case "arm64":
-			return Host{"aarch64-arm-none-eabi", ".tar.xz"}, nil
-		}
-	case "darwin":
-		switch runtime.GOARCH {
-		case "arm64":
-			return Host{"darwin-arm64-arm-none-eabi", ".tar.xz"}, nil
-		case "amd64":
-			return Host{"darwin-x86_64-arm-none-eabi", ".tar.xz"}, nil
-		}
-	case "windows":
-		if runtime.GOARCH == "amd64" {
-			return Host{"mingw-w64-x86_64-arm-none-eabi", ".zip"}, nil
-		}
+	h, err := HostFor(runtime.GOOS + "-" + runtime.GOARCH)
+	if err != nil {
+		return Host{}, fmt.Errorf("arm: unsupported platform %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
-	return Host{}, fmt.Errorf("arm: unsupported platform %s/%s", runtime.GOOS, runtime.GOARCH)
+	return h, nil
 }
 
 // ResolveForVersion picks the actual triple to use for `version` and
@@ -55,7 +69,7 @@ func CurrentHost() (Host, error) {
 // produce the same arm-none-eabi compiler; the difference is just whether
 // the compiler itself runs as a 32- or 64-bit Windows process.
 func (h Host) ResolveForVersion(ctx context.Context, version string) (Host, error) {
-	if runtime.GOOS == "windows" {
+	if strings.HasPrefix(h.Triple, "mingw") {
 		for _, triple := range []string{
 			"mingw-w64-x86_64-arm-none-eabi",
 			"mingw-w64-i686-arm-none-eabi",

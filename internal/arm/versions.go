@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -87,13 +88,28 @@ func Refresh(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// ProbeCurated HEADs the archive URL for each curated version on the given
-// host and returns those that respond OK. Used as a fallback when the
-// downloads page is unreachable.
+// ProbeCurated returns the curated versions that are installable on
+// the given host. For versions in armup's per-version catalog the
+// answer comes from PlatformsFor (no network); for versions the
+// catalog doesn't know (e.g. a brand-new release we haven't tabulated
+// yet) we fall back to HEAD-probing the archive URL.
+//
+// Used as a fallback when the downloads page is unreachable.
 func ProbeCurated(ctx context.Context, host Host) ([]string, error) {
+	hostKey := runtime.GOOS + "-" + runtime.GOARCH
 	client := &http.Client{Timeout: 15 * time.Second}
 	var out []string
 	for _, v := range Curated {
+		if known := PlatformsFor(v); known != nil {
+			for _, p := range known {
+				if p == hostKey {
+					out = append(out, v)
+					break
+				}
+			}
+			continue
+		}
+		// Unknown to the catalog — HEAD-probe.
 		url := host.ArchiveURL(v)
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 		if err != nil {

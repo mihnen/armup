@@ -55,6 +55,7 @@ commands:
   reset [-f] [--keep-shell]  Remove every installed version and armup data
   which                      Print the active toolchain's bin directory
   doctor                     Print a self-diagnostic of armup's state
+  mirror create <dest>       Build a local mirror of ARM's toolchain catalog
   completion <shell>         Print a shell-completion script (bash, zsh, fish, powershell)
   self-update [--nightly]    Replace the running binary with the latest release (or nightly)
   version                    Print armup's version
@@ -107,6 +108,8 @@ func run() int {
 		err = cmdWhich(args)
 	case "doctor":
 		err = cmdDoctor(ctx, args)
+	case "mirror":
+		err = cmdMirror(ctx, args)
 	case "completion":
 		err = cmdCompletion(args)
 	case "self-update":
@@ -339,6 +342,19 @@ func cmdInstall(ctx context.Context, args []string) error {
   is extracted, since the install itself no longer needs it. Local
   sources (file:// or bare paths) are never deleted regardless.
 
+  --mirror <URL> redirects the download to a mirror of ARM's URL
+  path structure. The same value can be set via the ARMUP_MIRROR
+  environment variable; the flag wins if both are present. Accepts
+  https://, file://, and bare local paths. Use 'armup mirror create'
+  to build a local mirror. Has no effect with --from (which is
+  already an explicit source).
+
+  --no-hash-check skips the SHA-256 hash check that armup normally
+  performs against ARM's published .sha256asc file (modern releases)
+  or against the SHA-256 baked into the legacy catalog. Use only
+  when you accept the integrity risk — there's no fallback if the
+  archive is corrupt or tampered with.
+
   --from and a positional <version> are mutually exclusive. If no
   version is currently active, the newly-installed one becomes
   active in either flow.`)
@@ -346,12 +362,23 @@ func cmdInstall(ctx context.Context, args []string) error {
 	asFlag := fs.String("as", "", "name to install under (defaults to source filename)")
 	sha256Flag := fs.String("sha256", "", "expected hex SHA-256 of the archive")
 	keepFlag := fs.Bool("keep-archive", false, "retain the cached download after a successful install")
+	mirrorFlag := fs.String("mirror", "", "mirror base URL (overrides $ARMUP_MIRROR)")
+	noHashCheckFlag := fs.Bool("no-hash-check", false, "skip the SHA-256 hash check of the downloaded archive")
 	fs.Parse(args)
+
+	mirror := *mirrorFlag
+	if mirror == "" {
+		mirror = os.Getenv("ARMUP_MIRROR")
+	}
 
 	if *fromFlag != "" {
 		if fs.NArg() > 0 {
 			fs.Usage()
 			return errors.New("--from cannot be combined with a positional <version> argument")
+		}
+		if *noHashCheckFlag {
+			fs.Usage()
+			return errors.New("--no-hash-check is for catalog installs; --from already accepts an optional --sha256")
 		}
 		return store.InstallFromSource(ctx, store.InstallSourceOpts{
 			Source:            *fromFlag,
@@ -381,7 +408,7 @@ func cmdInstall(ctx context.Context, args []string) error {
 		fs.Usage()
 		return errors.New("too many arguments")
 	}
-	return store.Install(ctx, version, true, *keepFlag)
+	return store.Install(ctx, version, true, *keepFlag, mirror, *noHashCheckFlag)
 }
 
 func cmdUse(args []string) error {
@@ -744,7 +771,7 @@ func cmdCompleteHidden(args []string) error {
 		for _, c := range []string{
 			"init", "available", "list", "install", "use", "current",
 			"pinned", "uninstall", "reset", "which", "doctor",
-			"completion", "self-update", "version", "help",
+			"mirror", "completion", "self-update", "version", "help",
 		} {
 			fmt.Println(c)
 		}
@@ -758,7 +785,16 @@ func cmdCompleteHidden(args []string) error {
 		if cached, _ := arm.LoadCachedAvailable(paths.AvailableFile()); len(cached) > 0 {
 			base = cached
 		}
+		// Filter to versions ARM publishes for the running host so
+		// `armup install <TAB>` only suggests installable options.
+		// Versions outside the catalog (e.g., a brand-new release we
+		// haven't tabulated yet) pass through — we don't have data
+		// to filter them, so let the user try.
+		hostKey := runtime.GOOS + "-" + runtime.GOARCH
 		for _, v := range arm.MergeAvailable(base) {
+			if known := arm.PlatformsFor(v); known != nil && !arm.SupportsPlatform(v, hostKey) {
+				continue
+			}
 			fmt.Println(v)
 		}
 	}

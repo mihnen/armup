@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `armup doctor` self-diagnostic. `--fix`, `--clean-cache`, and
+  `--remove-broken` apply targeted cleanups.
+- `armup mirror create <dest>` builds a local mirror of ARM's
+  catalog for offline / corporate use.
+- `--mirror <URL>` flag (or `ARMUP_MIRROR` env var) on
+  `armup install` redirects downloads to a mirror.
+- `--keep-archive` flag on `armup install` retains the cached
+  download.
+- `--no-hash-check` flag on `armup install` skips the SHA-256
+  hash check.
+
+### Changed
+
+- Cached archives are removed automatically after a successful
+  install; pass `--keep-archive` to opt back in.
+- `armup install <version>` errors cleanly when ARM doesn't
+  publish that (version, host) combo, before any network call.
+- `armup install <TAB>` only suggests versions installable on
+  the running host.
+
 ## [1.4.0] — 2026-05-10
 
 ### Added
@@ -39,8 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--as <name>` overrides the version slot name (default: derived from
   the source filename with archive extension stripped).
 - `--sha256 <hex>` verifies the archive before extraction; absent and
-  the install warns but proceeds (legacy archives don't ship checksum
-  sidecars).
+  the install warns but proceeds (legacy archives don't ship a SHA-256
+  hash file).
 - Refuses to clobber an existing `versions/<name>` with a clear error
   pointing the user at `--as` or `armup uninstall`.
 - `.tar.bz2` extraction support added (legacy ARM archives are bz2).

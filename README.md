@@ -146,6 +146,7 @@ armup which --pinned             print the project-pinned version's bin director
 armup uninstall <version> [-f]   remove a version (-f to remove the active one)
 armup reset [-f] [--keep-shell]  remove all versions and armup data
 armup doctor                     run a self-diagnostic; cleanup via --fix, --clean-cache, --remove-broken
+armup mirror create <dest>       build a local mirror of ARM's toolchain catalog
 armup completion <shell>         print a shell-completion script (bash, zsh, fish, powershell)
 armup self-update [--nightly]    replace the running binary with the latest release (or nightly build)
 armup version                    print armup's version
@@ -199,6 +200,62 @@ different `--as` or `armup uninstall <name>` first.
 
 Supported archive formats: `.tar.gz`, `.tar.xz`, `.tar.bz2`, `.zip`.
 Local archives are read in place — no copy to the cache.
+
+## Mirrors
+
+For offline use, corporate firewalls, or shared developer caches,
+`armup install` can redirect downloads to a mirror of ARM's URL
+path structure. Set `ARMUP_MIRROR` to a base URL (or `file://` URI,
+or bare local path), or pass `--mirror <URL>` on the install command:
+
+```sh
+ARMUP_MIRROR=https://internal.example.com/arm armup install 14.3.rel1
+armup install --mirror file:///mnt/share/arm-mirror 9-2019-q4-major
+```
+
+`armup` replaces `https://developer.arm.com` in the resolved URL with
+the mirror value and reads everything (archive + SHA-256 hash file) from
+there. Cache-miss on the mirror is a hard error — armup does not fall
+back to upstream. If both `ARMUP_MIRROR` and `--mirror` are set, the
+flag wins.
+
+If the SHA-256 hash file isn't reachable for a release, pass
+`--no-hash-check` on `armup install` to skip the verification step.
+Use only when you accept the integrity risk — there's no fallback
+if the archive is corrupt or tampered with.
+
+### Building a mirror
+
+`armup mirror create <dest>` populates a directory with archives laid
+out under the same path structure ARM uses, ready to serve from any
+web server or `file://` mount:
+
+```sh
+armup mirror create /srv/arm-mirror \
+  --platforms linux-amd64,linux-arm64,windows-amd64 \
+  --versions 14.3.rel1,13.3.rel1,12.3.rel1
+```
+
+Flags:
+
+- `--platforms <list>` — required. Comma-separated platforms from
+  `linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`,
+  `windows-amd64`. Pass `all` to include every platform.
+- `--versions <list>` — optional. Comma-separated version names.
+  Defaults to every version `armup available` lists (modern + legacy).
+
+The mirror is idempotent: re-running skips files already present with
+matching SHA-256. Combos that aren't published for a given release
+(e.g. `darwin-arm64` for the older gnu-rm-era versions) are skipped
+automatically.
+
+After creation, serve it directly:
+
+```sh
+cd /srv/arm-mirror && python -m http.server 8080
+# elsewhere:
+ARMUP_MIRROR=http://your-host:8080 armup install 14.3.rel1
+```
 
 ## Nightly builds
 

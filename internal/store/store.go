@@ -27,8 +27,8 @@ import (
 //  2. "wrapped, arbitrary name" — legacy ARM (gnu-rm) ships
 //     gcc-arm-none-eabi-<ver>/, custom builds may use anything else.
 //     We detect: if the staging dir contains exactly one subdir
-//     (top-level files like a .version sidecar are tolerated), promote
-//     that subdir.
+//     (loose top-level files like a stray .version are tolerated),
+//     promote that subdir.
 //  3. "unwrapped" — newer Windows zips (15.x) put bin/, lib/, etc. at
 //     the archive root with no wrapping dir. The staging dir itself is
 //     the toolchain root; rename it to verDir.
@@ -191,6 +191,11 @@ type InstallSourceOpts struct {
 	// sources (file:// URI or bare path) are never deleted — they
 	// don't belong to armup.
 	KeepArchive bool
+	// Mirror, when non-empty, replaces the developer.arm.com prefix
+	// in Source with the mirror's base. Used for offline / corporate
+	// mirror setups. Local Source values (file:// or bare path) are
+	// not rewritten.
+	Mirror string
 }
 
 // InstallFromSource installs a toolchain from an arbitrary source — used
@@ -207,7 +212,8 @@ func InstallFromSource(ctx context.Context, opts InstallSourceOpts) error {
 		return err
 	}
 
-	srcPath, srcFile, isLocal, err := resolveSource(opts.Source)
+	source := arm.ApplyMirror(opts.Source, opts.Mirror)
+	srcPath, srcFile, isLocal, err := resolveSource(source)
 	if err != nil {
 		return err
 	}
@@ -250,8 +256,8 @@ func InstallFromSource(ctx context.Context, opts InstallSourceOpts) error {
 			}
 		}
 		if needDownload {
-			fmt.Printf("Downloading %s\n", opts.Source)
-			if err := download.ToFile(ctx, opts.Source, archivePath); err != nil {
+			fmt.Printf("Downloading %s\n", source)
+			if err := download.ToFile(ctx, source, archivePath); err != nil {
 				return err
 			}
 		}
@@ -420,7 +426,12 @@ func validateAsName(name string) error {
 // If setCurrentIfFirst is true and no current version is set, this becomes
 // the active one. If keepArchive is true, the cached download survives
 // the install — by default it's deleted once extraction succeeds.
-func Install(ctx context.Context, version string, setCurrentIfFirst, keepArchive bool) error {
+// mirror, when non-empty, redirects downloads from developer.arm.com to
+// the given base URL (or `file://` / bare path). If noHashCheck is true,
+// the SHA-256 hash check is skipped — no fetch of .sha256asc, no
+// comparison against the legacy table's embedded SHA. A warning prints
+// to stderr; the user has explicitly opted out of integrity verification.
+func Install(ctx context.Context, version string, setCurrentIfFirst, keepArchive bool, mirror string, noHashCheck bool) error {
 	if err := EnsureLayout(); err != nil {
 		return err
 	}
@@ -434,14 +445,26 @@ func Install(ctx context.Context, version string, setCurrentIfFirst, keepArchive
 	}
 
 	// If this is a legacy version, route through InstallFromSource using
-	// the embedded URL + SHA-256 from the legacy table.
+	// the embedded URL + SHA-256 from the legacy table. When a mirror is
+	// in play, prefer the entry's Mirror URL (canonical-filename form
+	// for the pre-2017 mangled entries) so the mirror doesn't have to
+	// host the rev=<uuid> query-string variants.
 	if entry, ok := arm.LegacyLookup(version); ok {
+		src := entry.URL
+		if mirror != "" && entry.Mirror != "" {
+			src = entry.Mirror
+		}
+		expectedSHA := entry.SHA256
+		if noHashCheck {
+			expectedSHA = ""
+		}
 		return InstallFromSource(ctx, InstallSourceOpts{
-			Source:            entry.URL,
+			Source:            src,
 			As:                version,
-			SHA256:            entry.SHA256,
+			SHA256:            expectedSHA,
 			SetCurrentIfFirst: setCurrentIfFirst,
 			KeepArchive:       keepArchive,
+			Mirror:            mirror,
 		})
 	}
 
@@ -449,6 +472,17 @@ func Install(ctx context.Context, version string, setCurrentIfFirst, keepArchive
 	host, err := arm.CurrentHost()
 	if err != nil {
 		return err
+	}
+	// Pre-check: if the catalog knows this version and ARM doesn't
+	// publish it for the running host, fail with a clean message
+	// before we even hit the network. PlatformsFor returns nil for
+	// versions the catalog doesn't know (e.g. a fresh release we
+	// haven't tabulated yet) — those fall through to the existing
+	// HEAD-probe behavior below.
+	hostKey := runtime.GOOS + "-" + runtime.GOARCH
+	if known := arm.PlatformsFor(version); known != nil && !arm.SupportsPlatform(version, hostKey) {
+		return fmt.Errorf("ARM does not publish %s for %s (available platforms: %s)",
+			version, hostKey, strings.Join(known, ", "))
 	}
 	host, err = host.ResolveForVersion(ctx, version)
 	if err != nil {
@@ -469,33 +503,45 @@ func Install(ctx context.Context, version string, setCurrentIfFirst, keepArchive
 
 	archiveName := host.ArchiveFilename(version)
 	archivePath := filepath.Join(paths.CacheDir(), archiveName)
-	archiveURL := host.ArchiveURL(version)
-	checksumURL := host.ChecksumURL(version)
+	archiveURL := arm.ApplyMirror(host.ArchiveURL(version), mirror)
+	checksumURL := arm.ApplyMirror(host.ChecksumURL(version), mirror)
 
-	fmt.Printf("Fetching checksum for %s\n", version)
-	expected, err := arm.FetchChecksum(ctx, checksumURL)
-	if err != nil {
-		return fmt.Errorf("fetch checksum: %w", err)
+	var expected string
+	if noHashCheck {
+		fmt.Fprintln(os.Stderr, "warning: --no-hash-check specified; the downloaded archive will not be verified against ARM's published SHA-256")
+	} else {
+		fmt.Printf("Fetching SHA-256 for %s\n", version)
+		var err error
+		expected, err = arm.FetchChecksum(ctx, checksumURL)
+		if err != nil {
+			return fmt.Errorf("fetch hash: %w", err)
+		}
 	}
 
 	needDownload := true
 	if _, err := os.Stat(archivePath); err == nil {
-		if err := arm.VerifyFile(archivePath, expected); err == nil {
-			fmt.Printf("Using cached %s\n", archiveName)
-			needDownload = false
-		} else {
-			fmt.Printf("Cached archive failed verification, re-downloading\n")
-			os.Remove(archivePath)
+		if expected != "" {
+			if err := arm.VerifyFile(archivePath, expected); err == nil {
+				fmt.Printf("Using cached %s\n", archiveName)
+				needDownload = false
+			} else {
+				fmt.Printf("Cached archive failed verification, re-downloading\n")
+				os.Remove(archivePath)
+			}
 		}
+		// With noHashCheck we can't trust the cache (no expected hash
+		// to compare against), so always re-download.
 	}
 	if needDownload {
 		fmt.Printf("Downloading %s\n", archiveURL)
 		if err := download.ToFile(ctx, archiveURL, archivePath); err != nil {
 			return err
 		}
-		if err := arm.VerifyFile(archivePath, expected); err != nil {
-			os.Remove(archivePath)
-			return err
+		if expected != "" {
+			if err := arm.VerifyFile(archivePath, expected); err != nil {
+				os.Remove(archivePath)
+				return err
+			}
 		}
 	}
 

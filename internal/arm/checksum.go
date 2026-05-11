@@ -12,32 +12,52 @@ import (
 	"time"
 )
 
-// FetchChecksum downloads the .sha256 sidecar for a given URL and returns the
-// expected hex hash.
-func FetchChecksum(ctx context.Context, url string) (string, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("GET %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GET %s: %s", url, resp.Status)
-	}
-	body, err := io.ReadAll(resp.Body)
+// FetchChecksum downloads the SHA-256 hash file for a given source
+// and returns the expected hex hash. src may be an https:// URL, a
+// file:// URI, or a bare local path (the local forms support mirrors
+// pointed at a directory).
+func FetchChecksum(ctx context.Context, src string) (string, error) {
+	body, err := readChecksumBody(ctx, src)
 	if err != nil {
 		return "", err
 	}
 	// .sha256 files contain "<hex>  <filename>"; we just want the hex.
 	fields := strings.Fields(string(body))
 	if len(fields) == 0 {
-		return "", fmt.Errorf("checksum file at %s is empty", url)
+		return "", fmt.Errorf("checksum file at %s is empty", src)
 	}
 	return strings.ToLower(fields[0]), nil
+}
+
+func readChecksumBody(ctx context.Context, src string) ([]byte, error) {
+	if isLocal(src) {
+		return os.ReadFile(localPath(src))
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", src, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s: %s", src, resp.Status)
+	}
+	return io.ReadAll(resp.Body)
+}
+
+func isLocal(src string) bool {
+	if strings.HasPrefix(src, "file://") {
+		return true
+	}
+	return !strings.HasPrefix(src, "http://") && !strings.HasPrefix(src, "https://")
+}
+
+func localPath(src string) string {
+	return strings.TrimPrefix(src, "file://")
 }
 
 // VerifyFile hashes the file at path and compares to expected (hex).
