@@ -43,28 +43,60 @@ const usage = `armup - manage arm-none-eabi GCC toolchain versions
 usage: armup <command> [options]
 
 commands:
-  init                       Create directories and add PATH entry to shell rc
-  available [--refresh]      List versions available from ARM (cached or live)
-  list                       List installed versions; '*' marks current
-  install <version>          Download, verify, and extract a version
-  install --from <SRC>       Install from a custom URL or local archive
-  use <version>              Switch the active version
-  current                    Print the active version
-  pinned                     Print the per-project pinned version (if any)
-  uninstall <version> [-f]   Remove a version (-f to remove the active one)
-  reset [-f] [--keep-shell]  Remove every installed version and armup data
-  which                      Print the active toolchain's bin directory
-  doctor                     Print a self-diagnostic of armup's state
-  mirror create <dest>       Build a local mirror of ARM's toolchain catalog
-  completion <shell>         Print a shell-completion script (bash, zsh, fish, powershell)
-  self-update [--nightly]    Replace the running binary with the latest release (or nightly)
-  version                    Print armup's version
-  help                       Show this help
+  armup init
+     One-time setup (creates data dir, updates shell PATH)
+
+  armup available [--refresh] [--json]
+     List versions you can install
+
+  armup install <version> [--mirror <URL>] [--keep-archive] [--no-hash-check]
+     Download, verify, and extract a version
+
+  armup install --from <SRC> [--as <name>] [--sha256 <hex>] [--keep-archive]
+     Install from a custom URL or local archive
+
+  armup list [--json]
+     List installed versions; '*' marks current
+
+  armup use [<version>]
+     Switch the active version (no arg = use the project pin)
+
+  armup current [--json]
+     Print the active version
+
+  armup pinned [--json]
+     Print the per-project pinned version (if any)
+
+  armup which [<version>] [--pinned] [--json]
+     Print a toolchain's bin directory
+
+  armup uninstall <version> [-f]
+     Remove a version (-f to remove the active one)
+
+  armup reset [-f] [--keep-shell]
+     Remove every installed version and armup data
+
+  armup doctor [--fix] [--clean-cache] [--remove-broken]
+     Self-diagnostic; flags apply targeted cleanups
+
+  armup mirror create <dest> --platforms <list> [--versions <list>] [--concurrency N]
+     Build a local mirror of ARM's toolchain catalog
+
+  armup completion <bash|zsh|fish|powershell>
+     Print a shell-completion script
+
+  armup self-update [--nightly]
+     Replace the running binary with the latest release (or nightly)
+
+  armup version
+     Print armup's version
 
 The active version is exposed through a single PATH entry pointing at
 ` + "`<data>/current/bin`" + `, so switching versions takes effect immediately
 in any new shell (and in existing shells, since PATH lookups follow the
 symlink). Run ` + "`init`" + ` once to create the data dir and update your shell rc.
+
+Run ` + "`armup <command> -h`" + ` for the full per-command help.
 `
 
 // main is intentionally a thin wrapper around run() so that any deferred

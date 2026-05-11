@@ -132,30 +132,56 @@ GOOS=windows GOARCH=amd64 go build -o armup.exe   ./cmd/armup
 ## Commands
 
 ```
-armup init                       one-time setup (creates data dir, updates PATH)
-armup available [--refresh]      list versions you can install
-armup install <version>          download from developer.arm.com
-armup install --from <SRC>       install from a custom URL or local archive
-armup list                       list installed versions; * marks active
-armup use <version>              switch the active version
-armup current                    print the active version
-armup pinned                     print the project-pinned version (or 'none')
-armup which                      print the active toolchain's bin directory
-armup which <version>            print a specific installed version's bin directory
-armup which --pinned             print the project-pinned version's bin directory
-armup uninstall <version> [-f]   remove a version (-f to remove the active one)
-armup reset [-f] [--keep-shell]  remove all versions and armup data
-armup doctor                     run a self-diagnostic; cleanup via --fix, --clean-cache, --remove-broken
-armup mirror create <dest>       build a local mirror of ARM's toolchain catalog
-armup completion <shell>         print a shell-completion script (bash, zsh, fish, powershell)
-armup self-update [--nightly]    replace the running binary with the latest release (or nightly build)
-armup version                    print armup's version
+armup init
+   one-time setup (creates data dir, updates shell PATH)
+
+armup available [--refresh] [--json]
+   list versions you can install
+
+armup install <version> [--mirror <URL>] [--keep-archive] [--no-hash-check]
+   download, verify, and extract a version
+
+armup install --from <SRC> [--as <name>] [--sha256 <hex>] [--keep-archive]
+   install from a custom URL or local archive
+
+armup list [--json]
+   list installed versions; '*' marks active
+
+armup use [<version>]
+   switch the active version (no arg = use the project pin)
+
+armup current [--json]
+   print the active version
+
+armup pinned [--json]
+   print the per-project pinned version (or 'none')
+
+armup which [<version>] [--pinned] [--json]
+   print a toolchain's bin directory
+
+armup uninstall <version> [-f]
+   remove a version (-f to remove the active one)
+
+armup reset [-f] [--keep-shell]
+   remove every installed version and armup data
+
+armup doctor [--fix] [--clean-cache] [--remove-broken]
+   self-diagnostic; flags apply targeted cleanups
+
+armup mirror create <dest> --platforms <list> [--versions <list>] [--concurrency N]
+   build a local mirror of ARM's toolchain catalog
+
+armup completion <bash|zsh|fish|powershell>
+   print a shell-completion script
+
+armup self-update [--nightly]
+   replace the running binary with the latest release (or nightly build)
+
+armup version
+   print armup's version
 ```
 
-Run `armup <command> -h` for command-specific help.
-
-`armup list`, `armup available`, `armup current`, `armup pinned`, and
-`armup which` all accept `--json` for scripting.
+Run `armup <command> -h` for the full per-command help.
 
 ## Custom installs
 
