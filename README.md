@@ -52,7 +52,8 @@ armup use 14.3.rel1
 Override the install location with `ARMUP_INSTALL_DIR=...` before piping to
 `sh`. Or grab the tarball manually from the
 [Releases page](../../releases/latest) — archives are
-`armup-<version>-{linux-amd64, linux-arm64, darwin-amd64, darwin-arm64}.tar.gz`.
+`armup-<version>-{linux-amd64, linux-arm64, darwin-amd64, darwin-arm64}.tar.gz`
+and `armup-<version>-windows-amd64.zip`.
 
 ### Windows
 
